@@ -1,9 +1,3 @@
-"""The `pydantic_extra_types.jwt` module provides the [`JWTStr`][pydantic_extra_types.jwt.JWTStr] data type.
-
-This class depends on the `pydantic` package and implements structural validation of JWT format (RFC 7519).
-It does not verify the cryptographic signature.
-"""
-
 import base64
 import binascii
 import json
