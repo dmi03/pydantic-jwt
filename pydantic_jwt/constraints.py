@@ -10,7 +10,26 @@ from .type import JWTStr
 
 @dataclass(frozen=True)
 class JWTConstraints:
-    """Additional validation constraints for JWTStr, applied via Annotated."""
+    """Additional validation constraints for JWTStr, applied via Annotated.
+
+        ## Examples
+    ```python
+        from typing import Annotated
+
+        from pydantic import BaseModel
+
+        from pydantic_jwt import JWTStr, JWTConstraints
+
+
+        class Auth(BaseModel):
+            token: Annotated[JWTStr, JWTConstraints(allowed_algorithms=("HS256",))]
+
+
+        auth = Auth(token='eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dGVzdA')
+        print(auth.token.algorithm)
+        #> HS256
+    ```
+    """
 
     allowed_algorithms: tuple[str] | None = None
     exp_name: str = "exp"
