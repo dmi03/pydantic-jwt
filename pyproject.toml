@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pydantic-jwt"
-version = "0.1.0"
+version = "0.1.1"
 description = "Structural JWT validation as a Pydantic type"
 readme = "README.md"
 license = "MIT"
@@ -18,6 +18,11 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
 ]
+
+[project.urls]
+Homepage = "https://github.com/dmi03/pydantic-jwt"
+Repository = "https://github.com/dmi03/pydantic-jwt"
+Issues = "https://github.com/dmi03/pydantic-jwt/issues"
 
 [dependency-groups]
 dev = [
