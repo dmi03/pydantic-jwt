@@ -1,3 +1,3 @@
-from .type import JWTStr
+from .str import JWTStr
 
 __all__ = ["JWTStr"]
