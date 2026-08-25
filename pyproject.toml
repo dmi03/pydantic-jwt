@@ -12,6 +12,7 @@ authors = [{ name = "dmi03", email = "hello@dmi03.com" }]
 requires-python = ">=3.10"
 dependencies = [
     "pydantic>=2.10.0",
+    "pyjwt>=2.8.0",
 ]
 classifiers = [
     "Programming Language :: Python :: 3",
