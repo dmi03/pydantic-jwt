@@ -50,11 +50,13 @@ def test_jwt(jwt: str, valid: bool):
     if valid:
         assert JWTTest(token=jwt).token == jwt
         assert JWTStr(jwt) == jwt
+        assert JWTStr.validate(jwt) is True
     else:
         with pytest.raises(ValidationError):
             JWTTest(token=jwt)
         with pytest.raises(PydanticCustomError):
             JWTStr(jwt)
+        assert JWTStr.validate(jwt) is False
 
 
 def test_jwt_params():

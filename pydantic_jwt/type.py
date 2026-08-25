@@ -33,7 +33,7 @@ class JWTStr(str):
 
     @classmethod
     def __get_pydantic_core_schema__(cls, source: type[Any], handler: GetCoreSchemaHandler) -> core_schema.CoreSchema:
-        return core_schema.with_info_after_validator_function(cls.validate, core_schema.str_schema())
+        return core_schema.with_info_after_validator_function(cls._validate_pydantic, core_schema.str_schema())
 
     @classmethod
     def __get_pydantic_json_schema__(
@@ -54,12 +54,19 @@ class JWTStr(str):
         return super().__new__(cls, value)
 
     @classmethod
-    def validate(cls, value: Any, _: core_schema.ValidationInfo) -> "JWTStr":
-        """Validate and construct a JWTStr from the provided value."""
+    def _validate_pydantic(cls, value: Any, _: core_schema.ValidationInfo) -> "JWTStr":
         return cls(value)
 
-    @classmethod
-    def _validate(cls, value: Any) -> None:
+    @staticmethod
+    def validate(jwt: str) -> bool:
+        try:
+            JWTStr._validate(jwt)
+        except PydanticCustomError:
+            return False
+        return True
+
+    @staticmethod
+    def _validate(value: Any) -> None:
         if not isinstance(value, str):
             raise PydanticCustomError("jwt_type", "Value must be a string")
 
@@ -70,9 +77,9 @@ class JWTStr(str):
             )
 
         try:
-            header_bytes = cls._decode_segment(parts[0])
-            payload_bytes = cls._decode_segment(parts[1])
-            cls._decode_segment(parts[2])  # signature
+            header_bytes = JWTStr._decode_segment(parts[0])
+            payload_bytes = JWTStr._decode_segment(parts[1])
+            JWTStr._decode_segment(parts[2])  # signature
         except (ValueError, binascii.Error):
             raise PydanticCustomError(
                 "jwt_format", "Headers, payload and signature must be valid urlsafe base64"
