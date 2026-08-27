@@ -27,7 +27,9 @@ class BasePayload(BaseModel):
 
     @classmethod
     def __get_pydantic_core_schema__(cls, source: type[Any], handler: GetCoreSchemaHandler) -> core_schema.CoreSchema:
-        return core_schema.no_info_plain_validator_function(cls._validate_from_str)
+        default_schema = handler(source)
+        jwt_schema = core_schema.no_info_plain_validator_function(cls._validate_from_str)
+        return core_schema.union_schema([jwt_schema, default_schema], mode="left_to_right")
 
     @classmethod
     def _validate_from_str(cls: type[T], value: Any) -> T:
