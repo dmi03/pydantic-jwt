@@ -1,22 +1,15 @@
 import logging
-from typing import Any, TypedDict, TypeVar
+from typing import Any, TypeVar
 
 import jwt
 from pydantic import BaseModel, GetCoreSchemaHandler, GetJsonSchemaHandler
 from pydantic_core import PydanticCustomError, core_schema
 
 from .config import ConfigDict
-from .markers import ClaimName, Marker
 from .str import JWTStr
 
 T = TypeVar("T", bound="BasePayload")
 logger = logging.getLogger(__name__)
-
-
-class _ClaimMeta(TypedDict):
-    claim: ClaimName
-    valid: bool
-    value: Any
 
 
 class BasePayload(BaseModel):
@@ -46,7 +39,6 @@ class BasePayload(BaseModel):
     def from_token(cls: type[T], jwt_str: str) -> T:
         jwt_obj = JWTStr(jwt_str)
         instance = cls.model_validate(jwt_obj.payload)
-        instance._verify_metadata()
         instance._verify_signature(jwt_str)
         return instance
 
@@ -93,35 +85,3 @@ class BasePayload(BaseModel):
 
         payload = self.model_dump(mode="json")
         return jwt.encode(payload, encoding_key, algorithm=algorithm)
-
-    def _verify_metadata(self) -> None:
-        for name, meta in self._load_metadata().items():
-            if not meta["valid"]:
-                raise PydanticCustomError(
-                    "jwt_claim_invalid",
-                    "Claim {claim!r} (field {field!r}) is invalid: {value!r}",
-                    {"claim": meta["claim"].value, "field": name, "value": meta["value"]},
-                )
-
-    def _load_metadata(self) -> dict[str, _ClaimMeta]:
-        dumped = self.model_dump(mode="json")
-        metadata: dict[str, _ClaimMeta] = {}
-
-        for field_name, field_info in self.model_fields.items():
-            annotation = field_info.annotation
-
-            if isinstance(annotation, type) and issubclass(annotation, Marker):
-                value = dumped.get(field_name)
-
-                if value is None and not field_info.is_required():
-                    continue
-
-                is_valid = value is not None and annotation.validate(value)
-
-                metadata[field_name] = {
-                    "claim": annotation.__key__,
-                    "valid": is_valid,
-                    "value": value,
-                }
-
-        return metadata
