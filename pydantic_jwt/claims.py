@@ -12,23 +12,17 @@ from pydantic_core import PydanticCustomError, core_schema
 class Claim(ABC):
     __claim_name__: ClassVar[str]
 
-    validate: bool = True
-
     @abstractmethod
     def check(self, value: Any) -> bool:
         raise NotImplementedError
 
     def __get_pydantic_core_schema__(self, source: type[Any], handler: GetCoreSchemaHandler) -> core_schema.CoreSchema:
         schema = handler(source)
-        if not self.validate:
-            return schema
         return core_schema.with_info_after_validator_function(self._validate, schema)
 
     def _validate(self, value: Any, info: core_schema.ValidationInfo) -> Any:
         context = info.context
         if isinstance(context, dict) and not context.get("validate_claims", True):
-            return value
-        if not self.validate:
             return value
 
         if not self.check(value):
