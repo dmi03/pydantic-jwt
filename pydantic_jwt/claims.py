@@ -102,6 +102,36 @@ class IatClaim(Claim):
         return value <= (time.time() + self.leeway)
 
 
+@dataclass(frozen=True)
+class IssClaim(Claim):
+    """Reject tokens that were not issued by the expected issuer."""
+
+    __claim_name__ = "iss"
+
+    issuer: str
+
+    def check(self, value: Any) -> bool:
+        if not isinstance(value, str):
+            raise PydanticCustomError("jwt_type", "Value must be a string")
+        return value == self.issuer
+
+
+@dataclass(frozen=True)
+class AudClaim(Claim):
+    """Reject tokens that are not addressed to the expected audience."""
+
+    __claim_name__ = "aud"
+
+    issuer: str
+
+    def check(self, value: Any) -> bool:
+        if isinstance(value, str):
+            return value == self.issuer
+        if isinstance(value, list) and all(isinstance(item, str) for item in value):
+            return self.issuer in value
+        raise PydanticCustomError("jwt_type", "Value must be a string or a list of strings")
+
+
 Exp = Annotated[int, ExpClaim()]
 Nbf = Annotated[int, NbfClaim()]
 Iat = Annotated[int, IatClaim()]
