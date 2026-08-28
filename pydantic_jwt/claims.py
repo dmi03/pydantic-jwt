@@ -123,13 +123,13 @@ class AudClaim(Claim):
 
     __claim_name__ = "aud"
 
-    issuer: str
+    audience: str
 
     def check(self, value: Any) -> bool:
         if isinstance(value, str):
-            return value == self.issuer
+            return value == self.audience
         if isinstance(value, list) and all(isinstance(item, str) for item in value):
-            return self.issuer in value
+            return self.audience in value
         raise PydanticCustomError("jwt_type", "Value must be a string or a list of strings")
 
 
