@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import base64
 import binascii
 import json
@@ -49,12 +51,12 @@ class JWTStr(str):
         )
         return json_schema
 
-    def __new__(cls, value: Any) -> "JWTStr":
+    def __new__(cls, value: Any) -> JWTStr:
         cls._validate(value)
         return super().__new__(cls, value)
 
     @classmethod
-    def _validate_pydantic(cls, value: Any, _: core_schema.ValidationInfo) -> "JWTStr":
+    def _validate_pydantic(cls, value: Any, _: core_schema.ValidationInfo) -> JWTStr:
         return cls(value)
 
     @staticmethod
