@@ -26,6 +26,8 @@ class JWTStr(str):
         auth = Auth(token='eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dGVzdA')
         print(auth.token.header)
         #> {'alg': 'HS256'}
+        print(auth.token.algorithm)
+        #> 'HS256'
         print(auth.token.payload)
         #> {'sub': '1234567890'}
         print(auth.token.signature)
