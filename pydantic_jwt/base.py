@@ -15,6 +15,32 @@ logger = logging.getLogger(__name__)
 
 
 class JWTModel(BaseModel):
+    """A Pydantic model that is also a JWT.
+
+        Declare the claims as fields and set the keys in `model_config`; the model
+        then both issues tokens (`generate()`, `str()`) and validates incoming ones
+        (`from_token()`, or by validating a token string into the field). Reading a
+        token verifies its signature; building one from a dict does not.
+
+        ## Examples
+    ```python
+        from pydantic_jwt import ConfigDict, Exp, JWTModel, after
+
+
+        class AccessToken(JWTModel):
+            model_config = ConfigDict(algorithm='HS256', encoding_key=SECRET, decoding_key=SECRET)
+
+            sub: str
+            exp: Exp = after(minutes=15)
+
+
+        raw = str(AccessToken(sub='user-42'))
+        token = AccessToken.from_token(raw)
+        print(token.sub)
+        #> 'user-42'
+    ```
+    """
+
     model_config = ConfigDict(extra="forbid")
 
     @classmethod
@@ -41,6 +67,12 @@ class JWTModel(BaseModel):
 
     @classmethod
     def from_token(cls: type[T], jwt_str: str) -> T:
+        """Parse a token string, validate its claims and verify its signature.
+
+        Raises `PydanticCustomError` if the token is malformed, a claim fails, the
+        signature does not match, or the model has no `decoding_key` configured.
+        """
+
         jwt_obj = JWTStr(jwt_str)
         instance = cls.model_validate(jwt_obj.payload)
         instance._verify_signature(jwt_str)
@@ -83,6 +115,12 @@ class JWTModel(BaseModel):
         return self.generate()
 
     def generate(self, *, encoding_key: str | None = None, algorithm: str | None = None) -> str:
+        """Encode the model as a signed token.
+
+        `encoding_key` and `algorithm` override the values from `model_config`,
+        which is useful during key rotation.
+        """
+
         if encoding_key is None:
             encoding_key = self.model_config.get("encoding_key")
         if algorithm is None:
