@@ -8,11 +8,11 @@ from pydantic_core import PydanticCustomError, core_schema
 from .config import ConfigDict
 from .str import JWTStr
 
-T = TypeVar("T", bound="BasePayload")
+T = TypeVar("T", bound="JWTModel")
 logger = logging.getLogger(__name__)
 
 
-class BasePayload(BaseModel):
+class JWTModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     @classmethod
