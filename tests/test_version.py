@@ -8,12 +8,12 @@ import pytest
 from pydantic_jwt.version import __version__
 
 
-def test_version_is_string():
+def test_version_is_string() -> None:
     assert isinstance(__version__, str)
 
 
 @pytest.mark.skipif(sys.version_info < (3, 11), reason="tomllib requires Python 3.11+")
-def test_version_matches_pyproject():
+def test_version_matches_pyproject() -> None:
     import tomllib
 
     pyproject = Path(__file__).parent.parent / "pyproject.toml"

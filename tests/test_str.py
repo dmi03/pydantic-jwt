@@ -48,7 +48,7 @@ class JWTTest(BaseModel):
         ),
     ],
 )
-def test_jwt(jwt: str, valid: bool):
+def test_jwt(jwt: str, valid: bool) -> None:
     if valid:
         assert JWTTest(token=jwt).token == jwt
         assert JWTStr(jwt) == jwt
@@ -61,7 +61,7 @@ def test_jwt(jwt: str, valid: bool):
         assert JWTStr.validate(jwt) is False
 
 
-def test_jwt_params():
+def test_jwt_params() -> None:
     auth = JWTTest(token="eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dGVzdA")
     assert auth.token.header == {"alg": "HS256"}
     assert auth.token.algorithm == "HS256"
@@ -69,7 +69,7 @@ def test_jwt_params():
     assert auth.token.signature == b"test"
 
 
-def test_jwt_json_schema():
+def test_jwt_json_schema() -> None:
     schema = JWTTest.model_json_schema()
     token_schema = schema["properties"]["token"]
     assert token_schema["type"] == "string"

@@ -5,7 +5,7 @@ from pydantic import ConfigDict as PydanticConfigDict
 from pydantic_jwt import ConfigDict
 
 
-def test_config_dict_accepts_known_keys():
+def test_config_dict_accepts_known_keys() -> None:
     config = ConfigDict(
         algorithm="HS256",
         encoding_key="secret",
@@ -18,18 +18,18 @@ def test_config_dict_accepts_known_keys():
     assert config["require_keys"] is True
 
 
-def test_config_dict_is_partial():
+def test_config_dict_is_partial() -> None:
     # total=False — any subset of keys should be valid
     config: ConfigDict = ConfigDict(algorithm="HS256")
     assert config == {"algorithm": "HS256"}
 
 
-def test_config_dict_empty_is_valid():
+def test_config_dict_empty_is_valid() -> None:
     config: ConfigDict = ConfigDict()
     assert config == {}
 
 
-def test_config_dict_extends_pydantic_config_dict_keys():
+def test_config_dict_extends_pydantic_config_dict_keys() -> None:
     pydantic_keys = set(PydanticConfigDict.__annotations__)
     my_keys = set(ConfigDict.__annotations__)
     assert pydantic_keys.issubset(my_keys)
