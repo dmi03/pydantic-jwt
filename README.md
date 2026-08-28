@@ -1,12 +1,10 @@
 # pydantic-jwt
 
-Structural JWT validation as a Pydantic type.
+JWT tokens as Pydantic models.
 
-`pydantic-jwt` gives you a `JWTStr` type that validates a string is a
-well-formed JSON Web Token (RFC 7519) — three base64url segments, valid
-JSON header/payload, and a non-empty `alg`. It does **not** verify the
-cryptographic signature; use it to catch malformed tokens early, at the
-schema layer, before doing real verification with a library like `PyJWT`.
+Declare your token as a model, and get parsing, claim validation, signature
+verification and encoding out of it — with the claims typed, autocompleted and
+checked like any other Pydantic field.
 
 ## Install
 
@@ -17,85 +15,155 @@ pip install pydantic-jwt
 ## Basic usage
 
 ```python
-from pydantic import BaseModel
-from pydantic_jwt import JWTStr
+from pydantic_jwt import ConfigDict, Exp, JWTModel, after
+
+SECRET = "keep-me-out-of-your-source"
 
 
-class Auth(BaseModel):
-    token: JWTStr
+class AccessToken(JWTModel):
+    model_config = ConfigDict(
+        algorithm="HS256",
+        encoding_key=SECRET,
+        decoding_key=SECRET,
+    )
 
-
-auth = Auth(token="eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dGVzdA")
-
-print(auth.token.header)  # {'alg': 'HS256'}
-print(auth.token.payload)  # {'sub': '1234567890'}
-print(auth.token.algorithm)  # 'HS256'
-print(auth.token.signature)  # b'test'
+    sub: str
+    exp: Exp = after(minutes=15)
 ```
 
-If the string isn't a valid JWT, Pydantic raises a normal `ValidationError`:
+That single class is both ends of the flow.
+
+Issue a token:
 
 ```python
-Auth(token="not-a-jwt")
-# pydantic_core._pydantic_core.ValidationError: 1 validation error for Auth
-# token
-#   Value must include header, payload, and signature separated by dots [type=jwt_format, ...]
+token = AccessToken(sub="user-42")
+raw = str(token)  # 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...'
 ```
 
-## Additional constraints
+Read one back — the string is decoded, the signature is checked against
+`decoding_key`, and `exp` is validated:
 
-For extra checks beyond structural validity — allowed algorithms, token
-expiry (`exp`), not-before (`nbf`) — use `JWTConstraints` with `Annotated`:
+```python
+token = AccessToken.from_token(raw)
+token.sub  # 'user-42'
+```
+
+Anything wrong with the token raises a normal `ValidationError`, so it fits
+wherever Pydantic already does:
+
+```python
+AccessToken.from_token(forged)
+# jwt_invalid_signature: Invalid token signature for algorithm HS256
+
+AccessToken.from_token(stale)
+# exp claim is invalid: 1712345678
+```
+
+## Claims
+
+`Exp`, `Nbf` and `Iat` are annotated `int` types that validate themselves
+against the current time:
+
+```python
+from pydantic_jwt import Exp, Iat, Nbf
+
+
+class SessionToken(JWTModel):
+    sub: str
+    exp: Exp
+    nbf: Nbf
+    iat: Iat
+```
+
+Clock skew between servers is handled with `leeway`, in seconds:
 
 ```python
 from typing import Annotated
 
-from pydantic import BaseModel
-from pydantic_jwt import JWTStr, JWTConstraints
+from pydantic_jwt import ExpClaim
 
-
-class Auth(BaseModel):
-    token: Annotated[
-        JWTStr,
-        JWTConstraints(allowed_algorithms=("HS256", "RS256")),
-    ]
+exp: Annotated[int, ExpClaim(leeway=30)]
 ```
 
-By default, `JWTConstraints()` rejects expired tokens (`exp` in the past)
-and tokens that aren't active yet (`nbf` in the future).
+Don't want a claim checked at all? Annotate it as a plain `int`.
 
-### `JWTConstraints` options
-
-| Field                | Default   | Description                                              |
-|-----------------------|-----------|------------------------------------------------------------|
-| `allowed_algorithms`  | `None`    | Tuple of allowed `alg` values. `None` allows any algorithm. |
-| `exp_name`            | `"exp"`   | Payload key used for the expiry check.                     |
-| `allow_exp`           | `False`   | If `True`, skip the expiry check entirely.                 |
-| `nbf_name`            | `"nbf"`   | Payload key used for the not-before check.                 |
-| `allow_nbf`           | `False`   | If `True`, skip the not-before check entirely.              |
+Two helpers build timestamp defaults. They are evaluated per instance, so every
+token gets a fresh value:
 
 ```python
-# allow expired tokens, only restrict algorithm
-token: Annotated[JWTStr, JWTConstraints(allowed_algorithms=("HS256",), allow_exp=True)]
+from datetime import datetime, timezone
 
-# use non-standard claim names
-token: Annotated[JWTStr, JWTConstraints(exp_name="expires_at", nbf_name="not_before")]
+from pydantic_jwt import after, at
+
+
+class SessionToken(JWTModel):
+    sub: str
+    exp: Exp = after(hours=1, minutes=30)
+    nbf: Nbf = at(datetime(2030, 1, 1, tzinfo=timezone.utc))
 ```
 
-## What this does *not* do
+`after()` takes `weeks`, `days`, `hours`, `minutes`, `seconds` and
+`milliseconds`.
 
-- **No signature verification.** `JWTStr` only checks structure, not
-  authenticity. Anyone can craft a structurally valid JWT with any
-  payload they like — never trust claims from an unverified token.
-- **No decoding shortcuts for auth.** For real authentication flows,
-  verify the signature with a dedicated library (e.g. `PyJWT`,
-  `python-jose`) using the correct key and algorithm, then optionally
-  layer `JWTStr`/`JWTConstraints` on top for schema-level sanity checks.
+## With FastAPI
+
+```python
+from typing import Annotated
+
+from fastapi import Depends, FastAPI, Header
+
+app = FastAPI()
+
+
+def current_token(authorization: Annotated[str, Header()]) -> AccessToken:
+    return AccessToken.from_token(authorization.removeprefix("Bearer "))
+
+
+@app.get("/me")
+def me(token: Annotated[AccessToken, Depends(current_token)]) -> dict[str, str]:
+    return {"user": token.sub}
+```
+
+The endpoint body works with a typed object, not a dict of unknown claims.
+`AccessToken` also reports itself to OpenAPI as a string with `format: jwt`,
+so the schema stays readable.
+
+## Configuration
+
+Everything lives in `model_config`, alongside the usual Pydantic settings:
+
+| Key            | Description                                                              |
+|----------------|--------------------------------------------------------------------------|
+| `algorithm`    | Algorithm used to sign and verify, e.g. `"HS256"`.                        |
+| `encoding_key` | Key used by `generate()`.                                                 |
+| `decoding_key` | Key used to verify incoming tokens.                                       |
+| `require_keys` | If `False`, tokens are accepted without signature verification when no key is configured. Defaults to `True`. |
+
+`generate()` also takes `encoding_key` and `algorithm` directly, which is handy
+for key rotation:
+
+```python
+token.generate(encoding_key=next_key, algorithm="HS256")
+```
+
+## Good to know
+
+- **Building a model from a dict does not verify anything.**
+  `AccessToken(sub="x")` and `AccessToken.model_validate({"sub": "x"})` construct
+  a token you are about to sign; only `from_token()` (and validating from a
+  token *string*) checks a signature. Don't accept an `AccessToken` straight from
+  request data and treat it as authenticated.
+- **Unknown claims are rejected.** Models default to `extra="forbid"`, so tokens
+  from third-party issuers that add their own claims need
+  `model_config = ConfigDict(extra="ignore")` or explicit fields.
+- **`require_keys=False` accepts unverified tokens.** It logs a warning and moves
+  on. Useful in tests, dangerous everywhere else.
 
 ## Requirements
 
 - Python >= 3.10
-- Pydantic >= 2.10.0
+- Pydantic >= 2.10
+- PyJWT >= 2.8
 
 ## License
 
