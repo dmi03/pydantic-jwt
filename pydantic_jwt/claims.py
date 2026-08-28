@@ -81,27 +81,25 @@ Nbf = Annotated[int, NbfClaim()]
 Iat = Annotated[int, IatClaim()]
 
 
-_ALIASES = {
-    "sec": "seconds",
-    "secs": "seconds",
-    "s": "seconds",
-    "min": "minutes",
-    "mins": "minutes",
-    "m": "minutes",
-    "hour": "hours",
-    "h": "hours",
-    "day": "days",
-    "d": "days",
-    "week": "weeks",
-    "w": "weeks",
-    "ms": "milliseconds",
-}
-
-
-def after(**duration: float) -> Any:
-    delta = timedelta(**{_ALIASES.get(k, k): v for k, v in duration.items()})
-    seconds = delta.total_seconds()
-    return Field(default_factory=lambda: int(time.time() + seconds))
+def after(
+    *,
+    weeks: float = 0,
+    days: float = 0,
+    hours: float = 0,
+    minutes: float = 0,
+    seconds: float = 0,
+    milliseconds: float = 0,
+) -> Any:
+    delta = timedelta(
+        weeks=weeks,
+        days=days,
+        hours=hours,
+        minutes=minutes,
+        seconds=seconds,
+        milliseconds=milliseconds,
+    )
+    total = delta.total_seconds()
+    return Field(default_factory=lambda: int(time.time() + total))
 
 
 def at(moment: datetime) -> Any:
