@@ -61,10 +61,11 @@ class JWTStr(str):
     def _validate_pydantic(cls, value: Any, _: core_schema.ValidationInfo) -> JWTStr:
         return cls(value)
 
-    @staticmethod
-    def validate(jwt: str) -> bool:
+    @classmethod
+    def validate(cls, jwt: str) -> bool:
+        """Return whether the value is structurally a valid JWT, without raising."""
         try:
-            JWTStr._validate(jwt)
+            cls._validate(jwt)
         except PydanticCustomError:
             return False
         return True
@@ -110,6 +111,7 @@ class JWTStr(str):
 
     @property
     def algorithm(self) -> str | None:
+        """Return the `alg` value from the header, or `None` if it is absent."""
         return self.header.get("alg", None)
 
     @property
