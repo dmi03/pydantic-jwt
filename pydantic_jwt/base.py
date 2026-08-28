@@ -51,7 +51,11 @@ class JWTModel(BaseModel):
 
         if decoding_key is None or algorithm is None:
             if require_keys:
-                raise PydanticCustomError("jwt_missing_key", "decoding_key and algorithm must be set in model_config")
+                raise PydanticCustomError(
+                    "jwt_missing_key",
+                    "decoding_key and algorithm must be set in model_config",
+                    {"model": self.__class__.__name__, "keys": "decoding_key, algorithm"},
+                )
             logger.warning("JWT token approved without signature verification")
             return
 
@@ -68,8 +72,10 @@ class JWTModel(BaseModel):
                     "verify_iss": False,
                 },
             )
-        except (jwt.InvalidSignatureError, jwt.DecodeError):
-            raise PydanticCustomError("jwt_invalid_signature", "Invalid token signature") from None
+        except jwt.InvalidSignatureError:
+            raise PydanticCustomError(
+                "jwt_invalid_signature", "Invalid token signature for algorithm {algorithm}", {"algorithm": algorithm}
+            ) from None
 
     def __str__(self) -> str:
         return self.generate()
@@ -82,7 +88,9 @@ class JWTModel(BaseModel):
 
         if encoding_key is None or algorithm is None:
             raise PydanticCustomError(
-                "jwt_missing_key", "encoding_key and algorithm must be set in model_config to generate a token"
+                "jwt_missing_key",
+                "encoding_key and algorithm must be set in model_config to generate a token",
+                {"model": self.__class__.__name__, "keys": "encoding_key, algorithm"},
             )
 
         payload = self.model_dump(mode="json")
