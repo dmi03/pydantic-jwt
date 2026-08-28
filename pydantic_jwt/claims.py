@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+import uuid as _uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -167,3 +168,12 @@ def at(moment: datetime) -> Any:
     """
 
     return Field(default_factory=lambda: int(moment.timestamp()))
+
+
+def uuid(*, hex_uuid: bool = False) -> Any:
+    """Return a field default holding a fresh UUID4, as a hyphenated string or as hex.
+
+    Typically used for `jti`, so every issued token carries a unique id.
+    """
+
+    return Field(default_factory=lambda: _uuid.uuid4().hex if hex_uuid else str(_uuid.uuid4()))
