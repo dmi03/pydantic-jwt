@@ -12,10 +12,34 @@ from pydantic_core import PydanticCustomError, core_schema
 
 @dataclass(frozen=True)
 class Claim(ABC):
+    """Base class for time-based JWT claim validators.
+
+        Subclass it, set `__claim_name__` and implement `check()`, then attach the
+        instance to an `int` field with `Annotated`. Validation can be skipped per
+        call by passing `context={'validate_claims': False}` to `model_validate()`.
+
+        ## Examples
+    ```python
+        from typing import Annotated
+
+
+        @dataclass(frozen=True)
+        class AuthTimeClaim(Claim):
+            __claim_name__ = 'auth_time'
+
+            def check(self, value: Any) -> bool:
+                return value <= time.time()
+
+
+        auth_time: Annotated[int, AuthTimeClaim()]
+    ```
+    """
+
     __claim_name__: ClassVar[str]
 
     @abstractmethod
     def check(self, value: Any) -> bool:
+        """Return whether the claim value is acceptable at the current time."""
         raise NotImplementedError
 
     def __get_pydantic_core_schema__(self, source: type[Any], handler: GetCoreSchemaHandler) -> core_schema.CoreSchema:
@@ -38,6 +62,8 @@ class Claim(ABC):
 
 @dataclass(frozen=True)
 class ExpClaim(Claim):
+    """Reject tokens whose expiry time has passed."""
+
     __claim_name__ = "exp"
 
     leeway: float = 0.0
@@ -50,6 +76,8 @@ class ExpClaim(Claim):
 
 @dataclass(frozen=True)
 class NbfClaim(Claim):
+    """Reject tokens that are not valid yet."""
+
     __claim_name__ = "nbf"
 
     leeway: float = 0.0
@@ -62,6 +90,8 @@ class NbfClaim(Claim):
 
 @dataclass(frozen=True)
 class IatClaim(Claim):
+    """Reject tokens issued in the future."""
+
     __claim_name__ = "iat"
 
     leeway: float = 0.0
@@ -86,6 +116,8 @@ def after(
     seconds: float = 0,
     milliseconds: float = 0,
 ) -> Any:
+    """Return a field default that expires the given duration from now."""
+
     delta = timedelta(
         weeks=weeks,
         days=days,
@@ -99,4 +131,9 @@ def after(
 
 
 def at(moment: datetime) -> Any:
+    """Return a field default fixed to the given moment.
+
+    A naive `datetime` is interpreted in the server's local timezone.
+    """
+
     return Field(default_factory=lambda: int(moment.timestamp()))
