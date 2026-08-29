@@ -56,32 +56,56 @@ class JWTModel(BaseModel):
     @classmethod
     def __get_pydantic_core_schema__(cls, source: type[Any], handler: GetCoreSchemaHandler) -> core_schema.CoreSchema:
         default_schema = handler(source)
-        jwt_schema = core_schema.no_info_plain_validator_function(cls._validate_from_str)
+        jwt_schema = core_schema.with_info_plain_validator_function(cls._validate_from_str)
         return core_schema.union_schema([jwt_schema, default_schema], mode="left_to_right")
 
     @classmethod
-    def _validate_from_str(cls: type[T], value: Any) -> T:
+    def _validate_from_str(cls: type[T], value: Any, info: core_schema.ValidationInfo) -> T:
         if not isinstance(value, str):
             raise PydanticCustomError("jwt_type", "Value must be a string")
-        return cls.from_token(value)
+
+        context = info.context if isinstance(info.context, dict) else {}
+        decoding_key = context.get("decoding_key")
+        algorithm = context.get("algorithm")
+        require_keys = context.get("require_keys")
+        decoding_key = decoding_key if isinstance(decoding_key, str) else None
+        algorithm = algorithm if isinstance(algorithm, str) else None
+        require_keys = require_keys if isinstance(require_keys, bool) else None
+
+        return cls.from_token(
+            value, decoding_key=decoding_key, algorithm=algorithm, require_keys=require_keys, context=context
+        )
 
     @classmethod
-    def from_token(cls: type[T], jwt_str: str) -> T:
+    def from_token(
+        cls: type[T],
+        jwt_str: str,
+        *,
+        decoding_key: str | None = None,
+        algorithm: str | None = None,
+        require_keys: bool | None = None,
+        context: Any | None = None,
+    ) -> T:
         """Parse a token string, validate its claims and verify its signature.
 
-        Raises `PydanticCustomError` if the token is malformed, a claim fails, the
-        signature does not match, or the model has no `decoding_key` configured.
+        `decoding_key` and `algorithm` override `model_config`; the algorithm is
+        never taken from the token header.
         """
 
         jwt_obj = JWTStr(jwt_str)
-        instance = cls.model_validate(jwt_obj.payload)
-        instance._verify_signature(jwt_str)
+        instance = cls.model_validate(jwt_obj.payload, context=context)
+        instance._verify_signature(jwt_str, decoding_key, algorithm, require_keys)
         return instance
 
-    def _verify_signature(self, jwt_str: str) -> None:
-        decoding_key = self.model_config.get("decoding_key")
-        algorithm = self.model_config.get("algorithm")
-        require_keys = self.model_config.get("require_keys", True)
+    def _verify_signature(
+        self, jwt_str: str, decoding_key: str | None, algorithm: str | None, require_keys: bool | None
+    ) -> None:
+        if not decoding_key:
+            decoding_key = self.model_config.get("decoding_key")
+        if not algorithm:
+            algorithm = self.model_config.get("algorithm")
+        if require_keys is None:
+            require_keys = self.model_config.get("require_keys", True)
 
         if decoding_key is None or algorithm is None:
             if require_keys:
