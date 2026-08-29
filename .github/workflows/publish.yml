@@ -3,14 +3,6 @@ name: Publish
 on:
   workflow_dispatch:
     inputs:
-      target:
-        description: "Where to publish"
-        required: true
-        default: "testpypi"
-        type: choice
-        options:
-          - testpypi
-          - pypi
       confirm:
         description: 'Type "publish" to actually upload (anything else is a dry run)'
         required: true
@@ -44,7 +36,7 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     if: inputs.confirm == 'publish'
-    environment: ${{ inputs.target }}
+    environment: pypi
     permissions:
       id-token: write # trusted publishing (OIDC), no token needed if configured on PyPI/TestPyPI
     steps:
@@ -61,5 +53,4 @@ jobs:
           repository-url: https://test.pypi.org/legacy/
 
       - name: Publish to PyPI
-        if: inputs.target == 'pypi'
         uses: pypa/gh-action-pypi-publish@release/v1
