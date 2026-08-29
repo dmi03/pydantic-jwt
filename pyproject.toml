@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "pydantic-jwt"
 version = "0.1.1"
-description = "Structural JWT validation as a Pydantic type"
+description = "JWT tokens as Pydantic models"
 readme = "README.md"
 license = "MIT"
 authors = [{ name = "dmi03", email = "hello@dmi03.com" }]
@@ -15,9 +15,17 @@ dependencies = [
     "pyjwt>=2.8.0",
 ]
 classifiers = [
-    "Programming Language :: Python :: 3",
+    "Intended Audience :: Information Technology",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
+    "Framework :: Pydantic",
+    "Framework :: Pydantic :: 2",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
 ]
 
 [project.urls]
