@@ -59,6 +59,11 @@ packages = ["pydantic_jwt"]
 target-version = "py310"
 line-length = 120
 
+[tool.ruff.format]
+# Docs snippets use the `#>` output convention and are illustrative fragments,
+# so they are not formatted as if they were modules.
+exclude = ["*.md"]
+
 [tool.ruff.lint]
 select = ["E", "W", "F", "I", "N", "UP", "B", "SIM", "RUF"]
 
