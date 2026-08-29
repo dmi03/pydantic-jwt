@@ -135,6 +135,11 @@ class JWTModel(BaseModel):
                 "jwt_invalid_signature", "Invalid token signature for algorithm {algorithm}", {"algorithm": algorithm}
             ) from None
 
+    @property
+    def jwt_str(self) -> JWTStr:
+        """Return the signed token as a `JWTStr`."""
+        return JWTStr(self.generate())
+
     def __str__(self) -> str:
         return self.generate()
 
