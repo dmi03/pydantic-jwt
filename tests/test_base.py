@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import secrets
 
 import jwt
 import pytest
@@ -9,8 +10,8 @@ from pydantic_core import PydanticCustomError
 
 from pydantic_jwt import ConfigDict, JWTModel
 
-KEY = "secret"
-OTHER_KEY = "not-the-secret"
+KEY = secrets.token_hex(32) + "-1"
+OTHER_KEY = secrets.token_hex(32) + "-2"
 ALGORITHM = "HS256"
 
 
