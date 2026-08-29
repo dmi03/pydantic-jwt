@@ -29,7 +29,8 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/dmi03/pydantic-jwt"
+Homepage = "https://pydantic-jwt.dmi03.com"
+Documentation = "https://pydantic-jwt.dmi03.com"
 Repository = "https://github.com/dmi03/pydantic-jwt"
 Issues = "https://github.com/dmi03/pydantic-jwt/issues"
 
@@ -58,6 +59,11 @@ packages = ["pydantic_jwt"]
 [tool.ruff]
 target-version = "py310"
 line-length = 120
+
+[tool.ruff.format]
+# Docs snippets use the `#>` output convention and are illustrative fragments,
+# so they are not formatted as if they were modules.
+exclude = ["*.md"]
 
 [tool.ruff.lint]
 select = ["E", "W", "F", "I", "N", "UP", "B", "SIM", "RUF"]

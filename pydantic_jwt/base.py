@@ -17,13 +17,19 @@ logger = logging.getLogger(__name__)
 class JWTModel(BaseModel):
     """A Pydantic model that is also a JWT.
 
-        Declare the claims as fields and set the keys in `model_config`; the model
-        then both issues tokens (`generate()`, `str()`) and validates incoming ones
-        (`from_token()`, or by validating a token string into the field). Reading a
-        token verifies its signature; building one from a dict does not.
+    Declare the claims as fields and set the keys in `model_config`; the model
+    then both issues tokens (`generate()`, `str()`) and validates incoming ones
+    (`from_token()`, or by validating a token string into the field).
 
-        ## Examples
-    ```python
+    Reading a token string verifies its signature; building a model from a
+    dict does not, so never treat a model built from request data as
+    authenticated.
+
+    Unknown claims are rejected by default (`extra='forbid'`); set
+    `extra='ignore'` for tokens from third-party issuers.
+
+    Examples:
+        ```python
         from pydantic_jwt import ConfigDict, Exp, JWTModel, after
 
 
@@ -38,7 +44,7 @@ class JWTModel(BaseModel):
         token = AccessToken.from_token(raw)
         print(token.sub)
         #> 'user-42'
-    ```
+        ```
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -88,8 +94,28 @@ class JWTModel(BaseModel):
     ) -> T:
         """Parse a token string, validate its claims and verify its signature.
 
-        `decoding_key` and `algorithm` override `model_config`; the algorithm is
-        never taken from the token header.
+        Runs in three steps: structural parse, payload validation, then signature
+        verification. A token that fails claim validation never reaches the
+        signature check.
+
+        Args:
+            jwt_str: The compact token to read.
+            decoding_key: Key to verify with, overriding `model_config`.
+            algorithm: Algorithm to verify with, overriding `model_config`. It is
+                never taken from the token's own `alg` header, which is what
+                prevents algorithm-confusion attacks.
+            require_keys: Overrides `model_config` for this call.
+            context: Validation context forwarded to `model_validate()`. Pass
+                `{'validate_claims': False}` to skip the claim markers.
+
+        Returns:
+            The validated model.
+
+        Raises:
+            ValidationError: The payload is malformed or a claim was rejected.
+            PydanticCustomError: The signature does not verify
+                (`jwt_invalid_signature`), or no key is available and
+                `require_keys` is on (`jwt_missing_key`).
         """
 
         jwt_obj = JWTStr(jwt_str)
@@ -137,7 +163,10 @@ class JWTModel(BaseModel):
 
     @property
     def jwt_str(self) -> JWTStr:
-        """Return the signed token as a `JWTStr`."""
+        """Return the signed token as a `JWTStr`.
+
+        Signs on every access, exactly like `str()`.
+        """
         return JWTStr(self.generate())
 
     def __str__(self) -> str:
@@ -146,8 +175,20 @@ class JWTModel(BaseModel):
     def generate(self, *, encoding_key: str | None = None, algorithm: str | None = None) -> str:
         """Encode the model as a signed token.
 
-        `encoding_key` and `algorithm` override the values from `model_config`,
-        which is useful during key rotation.
+        The payload is `model_dump(mode='json')`, so custom field serialisers
+        decide what lands in the token.
+
+        Args:
+            encoding_key: Key to sign with, overriding `model_config`. Useful
+                during key rotation.
+            algorithm: Algorithm to sign with, overriding `model_config`.
+
+        Returns:
+            The compact, signed token.
+
+        Raises:
+            PydanticCustomError: No key or algorithm is available
+                (`jwt_missing_key`).
         """
 
         if encoding_key is None:

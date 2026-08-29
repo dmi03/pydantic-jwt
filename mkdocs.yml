@@ -1,0 +1,115 @@
+site_name: pydantic-jwt
+site_description: JWT tokens as Pydantic models.
+site_url: https://pydantic-jwt.dmi03.com/
+repo_url: https://github.com/dmi03/pydantic-jwt
+repo_name: dmi03/pydantic-jwt
+edit_uri: edit/main/docs/
+copyright: Licensed under the MIT License.
+
+theme:
+  name: material
+  features:
+    - content.code.copy
+    - content.code.annotate
+    - content.action.edit
+    - navigation.instant
+    - navigation.tracking
+    - navigation.sections
+    - navigation.top
+    - search.highlight
+    - search.suggest
+    - toc.follow
+  palette:
+    - media: "(prefers-color-scheme)"
+      toggle:
+        icon: material/brightness-auto
+        name: Switch to light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to system preference
+  icon:
+    repo: fontawesome/brands/github
+
+nav:
+  - Home: index.md
+  - Getting started:
+      - Installation: installation.md
+      - Quickstart: quickstart.md
+  - Guide:
+      - Token models: guide/models.md
+      - Configuration: guide/configuration.md
+      - Claims: guide/claims.md
+      - Defaults: guide/defaults.md
+      - Validation and errors: guide/validation.md
+      - Working with raw tokens: guide/jwt-str.md
+      - Security notes: guide/security.md
+  - Integrations:
+      - FastAPI: integrations/fastapi.md
+  - API reference:
+      - JWTModel: api/model.md
+      - Claims: api/claims.md
+      - ConfigDict: api/config.md
+      - JWTStr: api/str.md
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            docstring_style: google
+            docstring_section_style: table
+            heading_level: 3
+            members_order: source
+            merge_init_into_class: true
+            separate_signature: true
+            show_bases: true
+            show_if_no_docstring: false
+            show_root_heading: true
+            show_root_full_path: false
+            show_signature_annotations: true
+            show_source: true
+            show_symbol_type_heading: true
+            show_symbol_type_toc: true
+            signature_crossrefs: true
+
+watch:
+  - pydantic_jwt
+  - README.md
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/dmi03/pydantic-jwt
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/pydantic-jwt/

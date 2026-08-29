@@ -12,11 +12,16 @@ from pydantic_core import PydanticCustomError, core_schema
 class JWTStr(str):
     """A string subclass with structural validation for JWT (JSON Web Token) format.
 
-        ## Examples
-    ```python
+    Only the *structure* is checked: three urlsafe-base64 segments whose header
+    and payload decode to JSON objects. The signature is neither verified nor
+    inspected, so the payload of a `JWTStr` built from untrusted input is
+    attacker-controlled data — use `JWTModel.from_token()` to verify.
+
+    Examples:
+        ```python
         from pydantic import BaseModel
 
-        from pydantic_extra_types.jwt import JWTStr
+        from pydantic_jwt import JWTStr
 
 
         class Auth(BaseModel):
@@ -32,7 +37,7 @@ class JWTStr(str):
         #> {'sub': '1234567890'}
         print(auth.token.signature)
         #> b'test'
-    ```
+        ```
     """
 
     @classmethod
@@ -63,7 +68,15 @@ class JWTStr(str):
 
     @classmethod
     def validate(cls, jwt: str) -> bool:
-        """Return whether the value is structurally a valid JWT, without raising."""
+        """Return whether the value is structurally a valid JWT, without raising.
+
+        Args:
+            jwt: The value to inspect. A non-string returns `False` rather than
+                raising.
+
+        Returns:
+            `True` if the value would construct a `JWTStr`.
+        """
         try:
             cls._validate(jwt)
         except PydanticCustomError:
