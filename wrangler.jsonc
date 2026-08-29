@@ -1,0 +1,23 @@
+{
+  // Static-asset-only Worker serving the MkDocs site.
+  //
+  // Cloudflare builds and deploys this on every push via Workers Builds; the
+  // build command installs the `docs` dependency group and runs
+  // `mkdocs build --strict`, which writes ./site.
+  //
+  // There is no `main` entrypoint: the Worker serves ./site and nothing else.
+  // Custom domains (pydantic-jwt.dmi03.com) are attached from the dashboard
+  // under Settings -> Domains & Routes.
+  "name": "pydantic-jwt",
+  "compatibility_date": "2026-08-01",
+  "assets": {
+    "directory": "./site",
+    // MkDocs uses directory URLs (/quickstart/ -> quickstart/index.html), which
+    // is what "auto-trailing-slash" — the default — resolves. Unknown paths get
+    // the theme's 404.html.
+    "not_found_handling": "404-page"
+  },
+  "observability": {
+    "enabled": true
+  }
+}

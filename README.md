@@ -240,9 +240,10 @@ uv run mypy .            # types
 uv run mkdocs serve      # docs at http://127.0.0.1:8000
 ```
 
-The documentation site is built with MkDocs and deployed to Cloudflare Pages on
-every push to `main`; pull requests get their own preview deployment. See
-[`.github/workflows/docs.yml`](.github/workflows/docs.yml).
+The documentation site is built with MkDocs and served by Cloudflare as a
+static-asset Worker, rebuilt from this repository on every push. The Worker is
+configured in [`wrangler.jsonc`](wrangler.jsonc); CI also runs
+`mkdocs build --strict` on every pull request.
 
 ## License
 
