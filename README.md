@@ -11,7 +11,7 @@ Declare your token as a model, and get parsing, claim validation, signature
 verification and encoding out of it — with the claims typed, autocompleted and
 checked like any other Pydantic field.
 
-📖 **[Documentation](https://dmi03.github.io/pydantic-jwt/)**
+📖 **[Documentation](https://pydantic-jwt.dmi03.com/)**
 
 ## Install
 
@@ -114,7 +114,7 @@ exp: Annotated[int, ExpClaim(leeway=30)]
 ```
 
 Don't want a claim checked at all? Annotate it as a plain `int`. Need a rule of
-your own? [Subclass `Claim`](https://dmi03.github.io/pydantic-jwt/guide/claims/#custom-claims).
+your own? [Subclass `Claim`](https://pydantic-jwt.dmi03.com/guide/claims/#custom-claims).
 
 Three helpers build field defaults. They are evaluated per instance, so every
 token gets a fresh value:
@@ -174,7 +174,7 @@ the schema stays readable.
 
 A complete application — login, refresh-token rotation, scopes and error
 handling — is in the
-[FastAPI guide](https://dmi03.github.io/pydantic-jwt/integrations/fastapi/).
+[FastAPI guide](https://pydantic-jwt.dmi03.com/integrations/fastapi/).
 
 ## Configuration
 
@@ -213,22 +213,22 @@ token = AccessToken.from_token(raw, decoding_key=next_key, algorithm="HS256")
 - **`require_keys=False` accepts unverified tokens.** It logs a warning and moves
   on. Useful in tests, dangerous everywhere else.
 
-More in the [security notes](https://dmi03.github.io/pydantic-jwt/guide/security/).
+More in the [security notes](https://pydantic-jwt.dmi03.com/guide/security/).
 
 ## Documentation
 
 | | |
 | --- | --- |
-| [Quickstart](https://dmi03.github.io/pydantic-jwt/quickstart/) | The five-minute tour |
-| [Token models](https://dmi03.github.io/pydantic-jwt/guide/models/) | `JWTModel` in full |
-| [Configuration](https://dmi03.github.io/pydantic-jwt/guide/configuration/) | Keys, algorithms, rotation |
-| [Claims](https://dmi03.github.io/pydantic-jwt/guide/claims/) | Built-in and custom claim markers |
-| [Defaults](https://dmi03.github.io/pydantic-jwt/guide/defaults/) | `after()`, `at()`, `uuid()` |
-| [Validation and errors](https://dmi03.github.io/pydantic-jwt/guide/validation/) | Error types and validation context |
-| [Working with raw tokens](https://dmi03.github.io/pydantic-jwt/guide/jwt-str/) | `JWTStr` |
-| [Security notes](https://dmi03.github.io/pydantic-jwt/guide/security/) | Sharp edges and scope |
-| [FastAPI](https://dmi03.github.io/pydantic-jwt/integrations/fastapi/) | A complete auth flow |
-| [API reference](https://dmi03.github.io/pydantic-jwt/api/model/) | Generated from the source |
+| [Quickstart](https://pydantic-jwt.dmi03.com/quickstart/) | The five-minute tour |
+| [Token models](https://pydantic-jwt.dmi03.com/guide/models/) | `JWTModel` in full |
+| [Configuration](https://pydantic-jwt.dmi03.com/guide/configuration/) | Keys, algorithms, rotation |
+| [Claims](https://pydantic-jwt.dmi03.com/guide/claims/) | Built-in and custom claim markers |
+| [Defaults](https://pydantic-jwt.dmi03.com/guide/defaults/) | `after()`, `at()`, `uuid()` |
+| [Validation and errors](https://pydantic-jwt.dmi03.com/guide/validation/) | Error types and validation context |
+| [Working with raw tokens](https://pydantic-jwt.dmi03.com/guide/jwt-str/) | `JWTStr` |
+| [Security notes](https://pydantic-jwt.dmi03.com/guide/security/) | Sharp edges and scope |
+| [FastAPI](https://pydantic-jwt.dmi03.com/integrations/fastapi/) | A complete auth flow |
+| [API reference](https://pydantic-jwt.dmi03.com/api/model/) | Generated from the source |
 
 ## Development
 
@@ -239,6 +239,10 @@ uv run ruff check .      # lint
 uv run mypy .            # types
 uv run mkdocs serve      # docs at http://127.0.0.1:8000
 ```
+
+The documentation site is built with MkDocs and deployed to Cloudflare Pages on
+every push to `main`; pull requests get their own preview deployment. See
+[`.github/workflows/docs.yml`](.github/workflows/docs.yml).
 
 ## License
 

@@ -1,0 +1,8 @@
+/*
+  Referrer-Policy: strict-origin-when-cross-origin
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+
+# Material fingerprints its bundles, so they are safe to cache indefinitely.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable

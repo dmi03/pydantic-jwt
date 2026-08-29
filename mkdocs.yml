@@ -1,6 +1,6 @@
 site_name: pydantic-jwt
 site_description: JWT tokens as Pydantic models.
-site_url: https://dmi03.github.io/pydantic-jwt/
+site_url: https://pydantic-jwt.dmi03.com/
 repo_url: https://github.com/dmi03/pydantic-jwt
 repo_name: dmi03/pydantic-jwt
 edit_uri: edit/main/docs/

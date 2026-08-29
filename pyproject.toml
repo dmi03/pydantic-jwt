@@ -29,7 +29,8 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/dmi03/pydantic-jwt"
+Homepage = "https://pydantic-jwt.dmi03.com"
+Documentation = "https://pydantic-jwt.dmi03.com"
 Repository = "https://github.com/dmi03/pydantic-jwt"
 Issues = "https://github.com/dmi03/pydantic-jwt/issues"
 

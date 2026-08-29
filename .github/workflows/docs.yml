@@ -1,0 +1,83 @@
+name: Deploy docs
+
+# Deploys the MkDocs site to Cloudflare Pages.
+#
+# One-time setup:
+#   1. Create a Pages project named `pydantic-jwt` (Workers & Pages -> Create ->
+#      Pages -> Direct Upload). No build settings are needed: this workflow
+#      builds the site and uploads the result.
+#   2. Add two repository secrets:
+#        CLOUDFLARE_API_TOKEN   - an API token with the "Cloudflare Pages: Edit"
+#                                 permission on the account.
+#        CLOUDFLARE_ACCOUNT_ID  - the account id from the Cloudflare dashboard.
+#   3. Attach the custom domain `pydantic-jwt.dmi03.com` under the project's
+#      Custom domains tab. Cloudflare creates the CNAME itself when the zone
+#      `dmi03.com` is on the same account; there is no CNAME file to commit.
+#
+# Pushes to `main` publish production; pull requests from this repository get a
+# preview deployment with its own URL.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/**"
+      - "pydantic_jwt/**"
+      - "mkdocs.yml"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/workflows/docs.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "docs/**"
+      - "pydantic_jwt/**"
+      - "mkdocs.yml"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/workflows/docs.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Deploy to Cloudflare Pages
+    runs-on: ubuntu-latest
+    # Deployments need the account secrets, which fork pull requests do not get.
+    # Those are still covered by the strict docs build in the CI workflow.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      contents: read
+      deployments: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.13
+
+      - name: Install dependencies
+        run: uv sync --group docs
+
+      - name: Build site
+        run: uv run mkdocs build --strict
+
+      - name: Publish
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          # `--branch main` marks the deployment as production; anything else
+          # becomes a preview.
+          command: >-
+            pages deploy site
+            --project-name=pydantic-jwt
+            --branch=${{ github.event_name == 'pull_request' && github.head_ref || 'main' }}
