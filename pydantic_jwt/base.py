@@ -18,12 +18,13 @@ class JWTModel(BaseModel):
     """A Pydantic model that is also a JWT.
 
     Declare the claims as fields and set the keys in `model_config`; the model
-    then both issues tokens (`generate()`, `str()`) and validates incoming ones
-    (`from_token()`, or by validating a token string into the field).
+    then both issues tokens (`generate()`, `jwt_str`) and validates incoming
+    ones (`from_token()`, or by validating a token string into the field).
 
     Reading a token string verifies its signature; building a model from a
     dict does not, so never treat a model built from request data as
-    authenticated.
+    authenticated. Set `verified_only=True` to have the model reject payloads
+    outright and construct it deliberately with `from_claims()`.
 
     Unknown claims are rejected by default (`extra='forbid'`); set
     `extra='ignore'` for tokens from third-party issuers.
@@ -40,7 +41,7 @@ class JWTModel(BaseModel):
             exp: Exp = after(minutes=15)
 
 
-        raw = str(AccessToken(sub='user-42'))
+        raw = AccessToken(sub='user-42').generate()
         token = AccessToken.from_token(raw)
         print(token.sub)
         #> 'user-42'
@@ -102,6 +103,37 @@ class JWTModel(BaseModel):
 
     @classmethod
     def from_claims(cls: type[T], context: dict[str, Any] | None = None, /, **claims: Any) -> T:
+        """Build a model from claim values, without a token to verify.
+
+        This is how a `verified_only=True` model is constructed on the issuing
+        side: it marks the payload as deliberate, so the guard that rejects
+        unverified payloads stands down. Everything else still runs — field
+        types, claim markers and `extra` handling — so the result is a model you
+        are about to sign, never an authenticated one.
+
+        On a model without `verified_only` it is simply `model_validate()` over
+        keyword arguments.
+
+        Args:
+            context: Positional-only validation context, merged into the one
+                this method passes. Use it for `{'validate_claims': False}` when
+                building a deliberately expired token in a test.
+            **claims: The claim values, as keyword arguments.
+
+        Returns:
+            The validated model.
+
+        Raises:
+            ValidationError: A field or claim was rejected.
+
+        Examples:
+            ```python
+            token = AccessToken.from_claims(sub='user-42')
+            raw = token.generate()
+
+            stale = AccessToken.from_claims({'validate_claims': False}, sub='user-42', exp=1)
+            ```
+        """
         return cls.model_validate(claims, context={**(context or {}), "allow_unverified_payload": True})
 
     @classmethod
@@ -119,6 +151,9 @@ class JWTModel(BaseModel):
         Runs in three steps: structural parse, payload validation, then signature
         verification. A token that fails claim validation never reaches the
         signature check.
+
+        The payload comes from a token, so it is exempt from the
+        `verified_only` guard.
 
         Args:
             jwt_str: The compact token to read.
@@ -187,7 +222,8 @@ class JWTModel(BaseModel):
     def jwt_str(self) -> JWTStr:
         """Return the signed token as a `JWTStr`.
 
-        Signs on every access, exactly like `str()`.
+        Signs on every access, exactly like `generate()`, and wraps the result so
+        the header, payload and signature can be inspected.
         """
         return JWTStr(self.generate())
 

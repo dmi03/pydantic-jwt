@@ -27,6 +27,10 @@ class ConfigDict(PydanticConfigDict, total=False):
         require_keys: Whether a missing key is an error. Defaults to `True`. When
             `False`, tokens are accepted without signature verification and a
             warning is logged.
+        verified_only: Whether the model refuses to be built from a payload.
+            Defaults to `False`. When `True`, only a verified token string (or an
+            existing instance) validates; a dict or keyword arguments raise
+            `jwt_unverified_payload`, and the issuing side uses `from_claims()`.
     """
 
     algorithm: str
