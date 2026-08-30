@@ -33,3 +33,4 @@ class ConfigDict(PydanticConfigDict, total=False):
     encoding_key: str | None
     decoding_key: str | None
     require_keys: bool
+    verified_only: bool

@@ -62,8 +62,26 @@ class JWTModel(BaseModel):
     @classmethod
     def __get_pydantic_core_schema__(cls, source: type[Any], handler: GetCoreSchemaHandler) -> core_schema.CoreSchema:
         default_schema = handler(source)
+        payload_schema = core_schema.with_info_before_validator_function(cls._reject_unverified_payload, default_schema)
         jwt_schema = core_schema.with_info_plain_validator_function(cls._validate_from_str)
-        return core_schema.union_schema([jwt_schema, default_schema], mode="left_to_right")
+        return core_schema.union_schema([jwt_schema, payload_schema], mode="left_to_right")
+
+    @classmethod
+    def _reject_unverified_payload(cls, value: Any, info: core_schema.ValidationInfo) -> Any:
+        if not cls.model_config.get("verified_only", False):
+            return value
+        if isinstance(value, cls):
+            return value
+
+        context = info.context if isinstance(info.context, dict) else {}
+        if context.get("allow_unverified_payload", False):
+            return value
+
+        raise PydanticCustomError(
+            "jwt_unverified_payload",
+            "{model} only accepts a verified token string",
+            {"model": cls.__name__},
+        )
 
     @classmethod
     def _validate_from_str(cls: type[T], value: Any, info: core_schema.ValidationInfo) -> T:
@@ -119,7 +137,7 @@ class JWTModel(BaseModel):
         """
 
         jwt_obj = JWTStr(jwt_str)
-        instance = cls.model_validate(jwt_obj.payload, context=context)
+        instance = cls.model_validate(jwt_obj.payload, context={**(context or {}), "allow_unverified_payload": True})
         instance._verify_signature(jwt_str, decoding_key, algorithm, require_keys)
         return instance
 
