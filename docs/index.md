@@ -24,7 +24,7 @@ class AccessToken(JWTModel):
     jti: str = uuid()
 
 
-raw = str(AccessToken(sub="user-42"))  # issue
+raw = AccessToken(sub="user-42").generate()  # issue
 token = AccessToken.from_token(raw)  # read back, verified
 token.sub  #> 'user-42'
 ```
@@ -46,6 +46,9 @@ into the type system:
 - **Failures are `ValidationError`s.** A stale, forged or malformed token fails
   the same way a bad request body does, so it fits wherever Pydantic already
   does — including a FastAPI dependency.
+- **Unverified data can be refused outright.** `verified_only=True` makes the
+  model accept nothing but a token whose signature was checked, so "I forgot this
+  one came from the request body" stops being a class of bug.
 - **Fully typed.** The package ships a `py.typed` marker, is checked under
   `mypy --strict`, and models report themselves to OpenAPI as
   `{"type": "string", "format": "jwt"}`.
@@ -55,7 +58,8 @@ into the type system:
 | Feature | Where |
 | --- | --- |
 | `JWTModel` — issue and verify tokens from one class | [Token models](guide/models.md) |
-| `ConfigDict` — keys, algorithm and `require_keys` | [Configuration](guide/configuration.md) |
+| `verified_only` and `from_claims()` — refuse unverified payloads | [Token models](guide/models.md#refusing-unverified-payloads) |
+| `ConfigDict` — keys, algorithm, `require_keys`, `verified_only` | [Configuration](guide/configuration.md) |
 | `Exp`, `Nbf`, `Iat`, `IssClaim`, `AudClaim`, custom `Claim`s | [Claims](guide/claims.md) |
 | `after()`, `at()`, `uuid()` field defaults | [Defaults](guide/defaults.md) |
 | Error types, validation context, per-call keys | [Validation and errors](guide/validation.md) |

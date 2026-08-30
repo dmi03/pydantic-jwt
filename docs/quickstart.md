@@ -33,17 +33,17 @@ Three things are happening in the field list:
 
 ## 2. Issue a token
 
-Construct the model and turn it into a string:
+Construct the model and sign it:
 
 ```python
 token = AccessToken(sub="user-42")
 
-raw = str(token)
+raw = token.generate()
 #> 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c2VyLTQyIiwi...'
 ```
 
-`str(token)` calls [`generate()`][pydantic_jwt.JWTModel.generate], which dumps
-the model to JSON and signs it with `encoding_key` and `algorithm`. The
+[`generate()`][pydantic_jwt.JWTModel.generate] dumps the model to JSON and signs
+it with `encoding_key` and `algorithm`. The
 [`jwt_str`][pydantic_jwt.JWTModel.jwt_str] property returns the same string as a
 [`JWTStr`](guide/jwt-str.md), which can be taken apart:
 
@@ -51,6 +51,12 @@ the model to JSON and signs it with `encoding_key` and `algorithm`. The
 token.jwt_str.header  #> {'alg': 'HS256', 'typ': 'JWT'}
 token.jwt_str.payload  #> {'sub': 'user-42', 'exp': 1788009360, 'jti': '9044...'}
 ```
+
+!!! warning "`str(token)` is not the token"
+
+    Signing is `generate()` and `jwt_str`, never `str()` — which renders the
+    claims, the way any Pydantic model does. So `f"Bearer {token}"` is a bug;
+    write `f"Bearer {token.generate()}"`.
 
 ## 3. Read one back
 
@@ -76,11 +82,12 @@ from pydantic import ValidationError
 try:
     AccessToken.model_validate(untrusted)
 except ValidationError as exc:
-    print(exc.errors()[0]["type"])
-    #> 'jwt_invalid_signature' — signed with the wrong key
-    #> 'jwt_claim_invalid'     — expired, wrong issuer, ...
-    #> 'jwt_format'            — not three dot-separated base64url segments
-    #> 'extra_forbidden'       — a claim the model does not declare
+    print({error["type"] for error in exc.errors()})
+    #> 'jwt_invalid_signature'  — signed with the wrong key
+    #> 'jwt_claim_invalid'      — expired, wrong issuer, ...
+    #> 'jwt_format'             — not three dot-separated base64url segments
+    #> 'extra_forbidden'        — a claim the model does not declare
+    #> 'jwt_unverified_payload' — a payload where a verified token was required
 ```
 
 See [Validation and errors](guide/validation.md) for the full list and for the
@@ -95,7 +102,6 @@ from typing import Annotated
 
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from pydantic import ValidationError
 
 app = FastAPI()
 bearer = HTTPBearer()
@@ -106,7 +112,7 @@ def current_token(
 ) -> AccessToken:
     try:
         return AccessToken.from_token(credentials.credentials)
-    except (ValidationError, ValueError):
+    except ValueError:  # ValidationError and PydanticCustomError are both ValueErrors
         raise HTTPException(status_code=401, detail="Invalid token") from None
 
 
@@ -117,6 +123,32 @@ def me(token: Annotated[AccessToken, Depends(current_token)]) -> dict[str, str]:
 
 A complete application — login, refresh, scopes, error handling and OpenAPI — is
 in the [FastAPI guide](integrations/fastapi.md).
+
+## 6. Close the payload branch
+
+A model that reads tokens from outside should refuse to be built from anything
+else. `verified_only=True` enforces that, and
+[`from_claims()`](guide/models.md#from_claims) is how you construct one on
+purpose when issuing:
+
+```python
+class AccessToken(JWTModel):
+    model_config = ConfigDict(
+        algorithm="HS256",
+        encoding_key=SECRET,
+        decoding_key=SECRET,
+        verified_only=True,
+    )
+
+    sub: str
+    exp: Exp = after(minutes=15)
+
+
+AccessToken(sub="admin")  # ValidationError: jwt_unverified_payload
+raw = AccessToken.from_claims(sub="user-42").generate()  # deliberate
+```
+
+See [Refusing unverified payloads](guide/models.md#refusing-unverified-payloads).
 
 ## What to read next
 

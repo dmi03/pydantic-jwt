@@ -51,24 +51,6 @@ This is how key rotation is done without declaring a second model — see
 If neither the argument nor `model_config` supplies a key and an algorithm,
 `generate()` raises a `jwt_missing_key` error.
 
-### `str()`
-
-`__str__` is `generate()`, so a token model can be dropped anywhere a string is
-expected:
-
-```python
-raw = str(token)
-headers = {"Authorization": f"Bearer {token}"}
-```
-
-!!! warning "`str()` signs the token"
-
-    Because `__str__` signs, printing a model in a log statement or an f-string
-    writes a *valid credential* to the log. It also raises `jwt_missing_key` on
-    a model without an `encoding_key`, which can turn a debug `print()` into an
-    exception. Use `repr(token)` or `token.model_dump()` when you only want to
-    look at the claims.
-
 ### `jwt_str`
 
 [`jwt_str`][pydantic_jwt.JWTModel.jwt_str] returns the signed token as a
@@ -78,12 +60,56 @@ and `signature` properties:
 ```python
 token = AccessToken(sub="user-42")
 
-token.jwt_str == str(token)  #> True
+token.jwt_str == token.generate()  #> True
 token.jwt_str.header  #> {'alg': 'HS256', 'typ': 'JWT'}
 token.jwt_str.payload  #> {'sub': 'user-42', 'exp': 1788009360}
 ```
 
-It signs on every access, exactly like `str()`.
+It signs on every access, exactly like `generate()`. Use it when you want to
+look inside the token you just issued; use `generate()` when you only need the
+string.
+
+!!! warning "`str(token)` does not sign"
+
+    Signing is `generate()` and `jwt_str` only. `str(token)` is Pydantic's
+    default, so it renders the *claims*:
+
+    ```python
+    str(AccessToken(sub="user-42"))  #> "sub='user-42' exp=1788009360"
+    ```
+
+    Which means `f"Bearer {token}"` produces a broken header rather than a
+    credential. Write `f"Bearer {token.generate()}"`.
+
+    Earlier releases signed in `__str__`. That was removed because it made every
+    log line and f-string a potential credential leak, and made `print()` raise
+    on a model without an `encoding_key`. If you are upgrading, replace
+    `str(token)` with `token.generate()`.
+
+### `from_claims()`
+
+[`from_claims()`][pydantic_jwt.JWTModel.from_claims] builds a model from claim
+values rather than from a token:
+
+```python
+token = AccessToken.from_claims(sub="user-42")
+raw = token.generate()
+```
+
+On an ordinary model that is just `model_validate()` over keyword arguments, and
+the plain constructor does the same thing. It earns its keep on a
+[`verified_only`](#refusing-unverified-payloads) model, where it is the only way
+to construct one on the issuing side.
+
+It takes an optional **positional-only** validation context before the claims,
+which is how you build a deliberately invalid token in a test:
+
+```python
+stale = AccessToken.from_claims({"validate_claims": False}, sub="user-42", exp=1)
+```
+
+Everything else still runs — field types, claim markers, `extra` handling — so
+`from_claims(sub="user-42", exp=<past>)` raises just like the constructor would.
 
 ## Reading tokens
 
@@ -156,14 +182,72 @@ session.access_token.sub  #> 'user-42'
 !!! warning "Only a *string* is verified"
 
     `AccessToken(sub="x")` and `AccessToken.model_validate({"sub": "x"})` take
-    the dictionary branch of the union: no signature is involved, because you
-    are building a token to sign, not checking one. Never accept an
-    `AccessToken` straight out of a request body and treat it as authenticated —
-    see [Security notes](security.md#a-model-built-from-a-dict-is-not-authenticated).
+    the payload branch of the union: no signature is involved, because you are
+    building a token to sign, not checking one. Never accept an `AccessToken`
+    straight out of a request body and treat it as authenticated — or set
+    [`verified_only=True`](#refusing-unverified-payloads) so the model refuses
+    the payload for you.
 
 Errors from the string branch are reported by Pydantic as a union failure, so
 `exc.errors()` contains one entry per branch. The JWT-specific entry is the one
 whose `type` starts with `jwt_`.
+
+## Refusing unverified payloads
+
+`verified_only=True` closes the gap above at the type level. The model then
+accepts only what has actually been verified:
+
+```python
+class SessionToken(JWTModel):
+    model_config = ConfigDict(
+        algorithm="HS256",
+        decoding_key=SECRET,
+        verified_only=True,
+    )
+
+    sub: str
+    exp: Exp
+```
+
+| Input | Result |
+| --- | --- |
+| `SessionToken.from_token(raw)` | ✅ verified, signature checked |
+| `SessionToken.model_validate(raw)` — a token string | ✅ verified, signature checked |
+| `Envelope(token=raw)` — a token string in a field | ✅ verified, signature checked |
+| `Envelope(token=existing)` — an existing instance | ✅ passes through unchanged |
+| `SessionToken.from_claims(sub="x", exp=…)` | ✅ deliberate construction |
+| `SessionToken(sub="x", exp=…)` | ❌ `jwt_unverified_payload` |
+| `SessionToken.model_validate({"sub": "x", …})` | ❌ `jwt_unverified_payload` |
+| `Envelope(token={"sub": "x", …})` — a nested dict | ❌ `jwt_unverified_payload` |
+
+```python
+SessionToken(sub="attacker", exp=253402300799)
+# ValidationError: SessionToken only accepts a verified token string
+#                  [type=jwt_unverified_payload]
+```
+
+The nested-dict row is the one that matters: it is what makes a `verified_only`
+model safe to name as a **request body field**, where a plain model would let a
+client hand you any claims they like.
+
+The escape hatch is deliberate and explicit. On the issuing side, build with
+[`from_claims()`](#from_claims):
+
+```python
+raw = SessionToken.from_claims(sub="user-42", exp=int(time.time()) + 900).generate()
+```
+
+!!! note "Two things it does not cover"
+
+    `model_construct()` skips validation entirely, so it bypasses the guard —
+    that is true of every Pydantic validator, not just this one.
+
+    And the flag says nothing about *which* key verified the token. A model that
+    trusts several issuers still needs `iss`/`aud`
+    [claim markers](claims.md#issuer-and-audience).
+
+An existing instance passes through by identity (`is`), so re-validating a model
+you already verified costs nothing and cannot launder a payload into one.
 
 ## Configuration inheritance
 
@@ -253,10 +337,11 @@ what each call returns:
 
 | Call | Result |
 | --- | --- |
-| `str(token)`, `token.jwt_str` | the signed compact token |
+| `token.generate()`, `token.jwt_str` | the signed compact token |
 | `token.model_dump(mode="json")` | `dict[str, Any]` of claims — what `generate()` signs |
 | `token.model_dump_json()` | JSON object of claims, e.g. `'{"sub":"user-42"}'` |
 | `dict(token)` | `dict` of claims, values unconverted |
+| `str(token)` | Pydantic's field display, e.g. `"sub='user-42' exp=1788009360"` |
 | `token.model_dump()` | the model instance itself, **not** a dict |
 
 That last row is a consequence of the token-string-first union schema: the
@@ -275,7 +360,7 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
 
 
-TokenResponse(access_token=str(AccessToken(sub="user-42")))
+TokenResponse(access_token=AccessToken.from_claims(sub="user-42").generate())
 ```
 
 ## API reference
