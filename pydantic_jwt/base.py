@@ -101,6 +101,10 @@ class JWTModel(BaseModel):
         )
 
     @classmethod
+    def from_claims(cls: type[T], context: dict[str, Any] | None = None, /, **claims: Any) -> T:
+        return cls.model_validate(claims, context={**(context or {}), "allow_unverified_payload": True})
+
+    @classmethod
     def from_token(
         cls: type[T],
         jwt_str: str,
