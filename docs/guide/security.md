@@ -6,8 +6,8 @@ the library deliberately leaves to you.
 
 ## A model built from a dict is not authenticated
 
-This is the one to internalise. The signature is checked only when a **token
-string** is validated:
+This is the one to internalise. By default the signature is checked only when a
+**token string** is validated:
 
 ```python
 AccessToken.from_token(raw)  # verified
@@ -18,17 +18,51 @@ AccessToken.model_validate({"sub": "admin"})  # NOT verified
 ```
 
 Both behaviours are needed — the same class issues and reads tokens — but it
-means a `JWTModel` used directly as a **request body type** is a hole:
+means a plain `JWTModel` used directly as a **request body type** is a hole:
 
 ```python
-# DANGEROUS: FastAPI parses the JSON body into this model without any signature
+# DANGEROUS on a model without verified_only: FastAPI parses the JSON body
+# straight into it, and no signature is involved
 @app.post("/admin")
 def admin(token: AccessToken) -> None: ...
 ```
 
-A client can `POST {"sub": "admin"}` and get an `AccessToken` instance. Take
-tokens from a header through a dependency, or type the body field as `str` and
-call `from_token()` yourself. See the
+A client can `POST {"sub": "admin"}` and get an `AccessToken` instance.
+
+**The fix is `verified_only=True`.** With it set, the payload branch is closed:
+only a verified token string, an existing instance, or an explicit
+[`from_claims()`](models.md#from_claims) call produces a model.
+
+```python
+class AccessToken(JWTModel):
+    model_config = ConfigDict(
+        algorithm="HS256",
+        encoding_key=SECRET,
+        decoding_key=SECRET,
+        verified_only=True,
+    )
+
+    sub: str
+    exp: Exp = after(minutes=15)
+
+
+AccessToken(sub="admin")
+# ValidationError: AccessToken only accepts a verified token string
+#                  [type=jwt_unverified_payload]
+
+raw = AccessToken.from_claims(sub="user-42").generate()  # issuing, deliberately
+```
+
+Turn it on for every model that reads tokens from outside. The cost is one extra
+call on the issuing side; the benefit is that the dangerous shape above stops
+compiling into working code.
+
+It is a guard, not a proof: `model_construct()` skips all validation and so
+skips this too, and the flag says nothing about *which* issuer signed the token
+— that is what [`iss`/`aud` markers](claims.md#issuer-and-audience) are for.
+
+Without it, take tokens from a header through a dependency, or type the body
+field as `str` and call `from_token()` yourself. See the
 [FastAPI guide](../integrations/fastapi.md) for the shape that is safe.
 
 ## `require_keys=False` accepts forged tokens
@@ -60,14 +94,20 @@ def test_helper_is_unverified(caplog):
     assert "without signature verification" in caplog.text
 ```
 
-## `str()` on a model emits a live credential
+## Only `generate()` and `jwt_str` produce a credential
 
-`__str__` signs the token. That makes `f"Bearer {token}"` convenient and
-`logger.info("token=%s", token)` a credential leak — the signed token lands in
-your logs, and anyone who reads them can replay it until it expires.
+Signing is explicit: [`generate()`](models.md#generate) and
+[`jwt_str`](models.md#jwt_str), nothing else. `str(token)` and
+`logger.info("token=%s", token)` render the *claims*, not a usable token — which
+is the point. Earlier releases signed in `__str__`, and that turned every log
+line into a potential credential leak.
 
-Use `repr(token)` or `token.model_dump(mode="json")` for diagnostics; log the
-`jti`, never the token.
+Claims are not nothing, though: a `sub`, an email or a scope list in a log is
+still personal data. Log the `jti` and treat the payload as sensitive.
+
+The rule for the value `generate()` returns is unchanged — it is a bearer
+credential. Never put it in a log, an error response, a URL or an analytics
+event.
 
 ## The algorithm never comes from the token
 
@@ -140,7 +180,8 @@ Not bugs — scope. You need to handle these yourself:
 - [ ] Keys come from the environment or a secret manager, never from source.
 - [ ] HMAC secrets are at least 32 bytes; asymmetric keys are RSA-2048+ or an EC/Ed curve.
 - [ ] Every externally issued token model declares `exp`, and `iss`/`aud` where a key is shared.
+- [ ] Every model that reads tokens from outside sets `verified_only=True`.
 - [ ] `require_keys=False` appears nowhere outside tests.
-- [ ] No `JWTModel` is used as a request-body type.
-- [ ] Tokens are not written to logs or error responses.
+- [ ] No `JWTModel` without `verified_only` is used as a request-body type.
+- [ ] The output of `generate()` is not written to logs or error responses.
 - [ ] Access-token lifetimes are minutes, not days.

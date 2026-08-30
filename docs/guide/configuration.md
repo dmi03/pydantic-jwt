@@ -1,6 +1,6 @@
 # Configuration
 
-[`ConfigDict`][pydantic_jwt.ConfigDict] is Pydantic's `ConfigDict` with four
+[`ConfigDict`][pydantic_jwt.ConfigDict] is Pydantic's `ConfigDict` with five
 extra keys. Because it subclasses the original, every standard Pydantic setting
 keeps working next to the JWT ones:
 
@@ -15,6 +15,7 @@ class AccessToken(JWTModel):
         encoding_key=SECRET,
         decoding_key=SECRET,
         require_keys=True,
+        verified_only=False,
         # ordinary Pydantic keys
         extra="forbid",
         frozen=True,
@@ -29,14 +30,15 @@ class AccessToken(JWTModel):
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
 | `algorithm` | `str` | — | Algorithm used to sign and verify, e.g. `"HS256"`. Passed straight to PyJWT. |
-| `encoding_key` | `str \| None` | — | Key used by [`generate()`][pydantic_jwt.JWTModel.generate] and `str()`. |
+| `encoding_key` | `str \| None` | — | Key used by [`generate()`][pydantic_jwt.JWTModel.generate] and [`jwt_str`][pydantic_jwt.JWTModel.jwt_str]. |
 | `decoding_key` | `str \| None` | — | Key used to verify incoming tokens. |
 | `require_keys` | `bool` | `True` | Whether a missing key is an error. `False` accepts tokens *without verifying the signature*. |
+| `verified_only` | `bool` | `False` | Whether the model refuses to be built from a payload. `True` accepts only verified token strings and [`from_claims()`][pydantic_jwt.JWTModel.from_claims]. |
 
 `ConfigDict` is `total=False`, so any subset is valid — including none of them,
 for a model that only ever receives keys per call.
 
-All four are plain `TypedDict` keys, which means a typo like `algorythm=` is
+All five are plain `TypedDict` keys, which means a typo like `algorythm=` is
 caught by mypy rather than silently ignored at runtime.
 
 ## Symmetric keys
@@ -190,6 +192,53 @@ token. See [Security notes](security.md#require_keysfalse-accepts-forged-tokens)
 Note that `require_keys` only matters when a key is *missing*. With a key
 configured, the signature is always checked, whatever `require_keys` says.
 
+## `verified_only`
+
+`require_keys` governs what happens when a key is missing. `verified_only`
+governs something different: whether the model may be built at all from data
+that never went through a signature check.
+
+```python
+class SessionToken(JWTModel):
+    model_config = ConfigDict(algorithm="HS256", decoding_key=SECRET, verified_only=True)
+
+    sub: str
+    exp: Exp
+```
+
+With it on, a payload — a dict, keyword arguments, a nested object in a request
+body — is rejected with `jwt_unverified_payload`. Only a verified token string,
+an existing instance, or an explicit
+[`from_claims()`][pydantic_jwt.JWTModel.from_claims] call gets through.
+
+This is the setting that makes a token model safe to name as a request-body
+field type. The full table of what is and is not accepted is in
+[Token models](models.md#refusing-unverified-payloads).
+
+A model that both issues and consumes tokens keeps `verified_only=True` and uses
+`from_claims()` on the issuing side:
+
+```python
+class AccessToken(JWTModel):
+    model_config = ConfigDict(
+        algorithm="HS256",
+        encoding_key=SECRET,
+        decoding_key=SECRET,
+        verified_only=True,
+    )
+
+    sub: str
+    exp: Exp = after(minutes=15)
+
+
+raw = AccessToken.from_claims(sub="user-42").generate()  # issue
+token = AccessToken.from_token(raw)  # consume
+```
+
+If a model only ever *reads* tokens, `verified_only=True` plus no `encoding_key`
+is the tightest configuration available: it can neither be built from a payload
+nor sign anything.
+
 ## Reading configuration at runtime
 
 `model_config` is a plain dict, so the effective values are readable — handy in
@@ -198,6 +247,7 @@ tests and health checks:
 ```python
 AccessToken.model_config["algorithm"]  #> 'HS256'
 AccessToken.model_config.get("require_keys", True)  #> True
+AccessToken.model_config.get("verified_only", False)  #> False
 ```
 
 ## API reference

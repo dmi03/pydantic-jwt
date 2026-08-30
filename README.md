@@ -47,7 +47,7 @@ Issue a token:
 
 ```python
 token = AccessToken(sub="user-42")
-raw = str(token)  # 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...'
+raw = token.generate()  # 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...'
 ```
 
 Read one back — the string is parsed, `exp` is validated, and the signature is
@@ -68,10 +68,11 @@ try:
     token = AccessToken.model_validate(untrusted)
 except ValidationError as exc:
     {error["type"] for error in exc.errors()}
-    # 'jwt_invalid_signature' — signed with the wrong key
-    # 'jwt_claim_invalid'     — expired, wrong issuer, wrong audience
-    # 'jwt_format'            — not a JWT at all
-    # 'extra_forbidden'       — a claim the model does not declare
+    # 'jwt_invalid_signature'  — signed with the wrong key
+    # 'jwt_claim_invalid'      — expired, wrong issuer, wrong audience
+    # 'jwt_format'             — not a JWT at all
+    # 'extra_forbidden'        — a claim the model does not declare
+    # 'jwt_unverified_payload' — a payload where a verified token was required
 ```
 
 ## Claims
@@ -135,6 +136,50 @@ class SessionToken(JWTModel):
 `after()` takes `weeks`, `days`, `hours`, `minutes`, `seconds` and
 `milliseconds`.
 
+## Refusing unverified payloads
+
+By default a `JWTModel` can be built from a dict as well as from a token — the
+same class issues and reads, so both are needed. `verified_only=True` closes the
+payload branch for models that only ever *consume* tokens:
+
+```python
+class AccessToken(JWTModel):
+    model_config = ConfigDict(
+        algorithm="HS256",
+        encoding_key=SECRET,
+        decoding_key=SECRET,
+        verified_only=True,
+    )
+
+    sub: str
+    exp: Exp = after(minutes=15)
+
+
+AccessToken.from_token(raw)  # ✅ signature checked
+AccessToken.model_validate(raw)  # ✅ signature checked
+
+AccessToken(sub="admin")  # ❌ ValidationError: jwt_unverified_payload
+AccessToken.model_validate({"sub": "admin"})  # ❌ jwt_unverified_payload
+```
+
+That includes a nested dict, which is what makes such a model safe to name as a
+request-body field type — a client cannot hand you the claims they would like to
+have.
+
+On the issuing side, construct one deliberately with `from_claims()`:
+
+```python
+raw = AccessToken.from_claims(sub="user-42").generate()
+```
+
+It still validates everything — field types, claim markers, `extra` — and takes
+an optional positional context first, for building a deliberately invalid token
+in a test:
+
+```python
+stale = AccessToken.from_claims({"validate_claims": False}, sub="user-42", exp=1)
+```
+
 ## With FastAPI
 
 ```python
@@ -183,9 +228,10 @@ Everything lives in `model_config`, alongside the usual Pydantic settings:
 | Key            | Description                                                              |
 |----------------|--------------------------------------------------------------------------|
 | `algorithm`    | Algorithm used to sign and verify, e.g. `"HS256"`.                        |
-| `encoding_key` | Key used by `generate()` and `str()`.                                     |
+| `encoding_key` | Key used by `generate()` and `jwt_str`.                                   |
 | `decoding_key` | Key used to verify incoming tokens.                                       |
 | `require_keys` | If `False`, tokens are accepted without signature verification when no key is configured. Defaults to `True`. |
+| `verified_only` | If `True`, the model refuses to be built from a payload — only a verified token string or `from_claims()`. Defaults to `False`. |
 
 Both directions also take keys per call, which is handy for key rotation and
 multi-tenant deployments:
@@ -200,11 +246,11 @@ token = AccessToken.from_token(raw, decoding_key=next_key, algorithm="HS256")
 - **Building a model from a dict does not verify anything.**
   `AccessToken(sub="x")` and `AccessToken.model_validate({"sub": "x"})` construct
   a token you are about to sign; only `from_token()` (and validating from a
-  token *string*) checks a signature. Don't accept an `AccessToken` straight from
-  request data and treat it as authenticated.
-- **`str(token)` signs.** Convenient in `f"Bearer {token}"`, a credential leak in
-  a log line. Use `repr(token)` or `token.model_dump(mode="json")` for
-  diagnostics.
+  token *string*) checks a signature. Set `verified_only=True` so the model
+  refuses payloads outright — see below.
+- **`str(token)` does not sign.** Signing is `generate()` and `jwt_str`, nothing
+  else. `str(token)` renders the claims like any Pydantic model, so
+  `f"Bearer {token}"` is a bug — write `f"Bearer {token.generate()}"`.
 - **Unknown claims are rejected.** Models default to `extra="forbid"`, so tokens
   from third-party issuers that add their own claims need
   `model_config = ConfigDict(extra="ignore")` or explicit fields.
@@ -220,7 +266,7 @@ More in the [security notes](https://pydantic-jwt.dmi03.com/guide/security/).
 | | |
 | --- | --- |
 | [Quickstart](https://pydantic-jwt.dmi03.com/quickstart/) | The five-minute tour |
-| [Token models](https://pydantic-jwt.dmi03.com/guide/models/) | `JWTModel` in full |
+| [Token models](https://pydantic-jwt.dmi03.com/guide/models/) | `JWTModel`, `verified_only`, `from_claims()` |
 | [Configuration](https://pydantic-jwt.dmi03.com/guide/configuration/) | Keys, algorithms, rotation |
 | [Claims](https://pydantic-jwt.dmi03.com/guide/claims/) | Built-in and custom claim markers |
 | [Defaults](https://pydantic-jwt.dmi03.com/guide/defaults/) | `after()`, `at()`, `uuid()` |

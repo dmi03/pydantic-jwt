@@ -72,7 +72,7 @@ class Ping(JWTModel):
     sub: str
 
 
-assert Ping.from_token(str(Ping(sub="ok"))).sub == "ok"
+assert Ping.from_token(Ping(sub="ok").generate()).sub == "ok"
 ```
 
 !!! tip "Key length"

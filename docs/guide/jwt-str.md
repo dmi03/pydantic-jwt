@@ -135,8 +135,13 @@ already wrapped:
 
 ```python
 token = AccessToken(sub="user-42")
+token.jwt_str  #> the signed compact token, as a JWTStr
 token.jwt_str.payload  #> {'sub': 'user-42', 'exp': 1788009360}
 ```
+
+Note that `str(token)` on a `JWTModel` is *not* a token — signing is
+[`generate()`](models.md#generate) and `jwt_str` only. A `JWTStr`, on the other
+hand, really is the string.
 
 ## API reference
 

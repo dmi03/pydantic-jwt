@@ -15,8 +15,10 @@ pip install pydantic-jwt fastapi "uvicorn[standard]"
 
 ## 1. The token models
 
-Two models, two secrets. Sharing a base class keeps the algorithm in one place;
-separate keys mean a refresh token can never be replayed as an access token.
+Two models, two secrets. Separate keys mean a refresh token can never be
+replayed as an access token, and `verified_only=True` means neither model can be
+built from anything a client sent — only from a token whose signature was
+checked, or from an explicit `from_claims()` call on the issuing side.
 
 ```python
 import os
@@ -36,6 +38,7 @@ class AccessToken(JWTModel):
         algorithm="HS256",
         encoding_key=ACCESS_SECRET,
         decoding_key=ACCESS_SECRET,
+        verified_only=True,
     )
 
     sub: str
@@ -52,6 +55,7 @@ class RefreshToken(JWTModel):
         algorithm="HS256",
         encoding_key=REFRESH_SECRET,
         decoding_key=REFRESH_SECRET,
+        verified_only=True,
     )
 
     sub: str
@@ -63,11 +67,16 @@ Because the two use different keys, feeding a refresh token to `AccessToken`
 fails with `jwt_invalid_signature` — the models cannot be confused for one
 another.
 
+`verified_only=True` is what makes these models safe to hold anywhere in a
+request: a client that `POST`s `{"sub": "admin", "scopes": ["users:write"]}`
+gets a `jwt_unverified_payload` error instead of an `AccessToken`. See
+[Refusing unverified payloads](../guide/models.md#refusing-unverified-payloads).
+
 ## 2. Response models
 
 The wire format is a string, so response models declare `str` and are filled
-with `str(token)`. (Serialising the model itself would emit the claims as a JSON
-object — see [Serialisation](../guide/models.md#serialisation).)
+with `token.generate()`. (Serialising the model itself would emit the claims as
+a JSON object — see [Serialisation](../guide/models.md#serialisation).)
 
 ```python
 from pydantic import BaseModel
@@ -113,17 +122,23 @@ CurrentToken = Annotated[AccessToken, Depends(current_token)]
 
 The alias is worth the two lines: endpoints then read as `token: CurrentToken`.
 
-!!! warning "Never take a token from the request body"
+!!! warning "Take tokens from the header, not the body"
 
     ```python
     @app.post("/admin")
-    def admin(token: AccessToken) -> None: ...  # DANGEROUS
+    def admin(token: AccessToken) -> None: ...
     ```
 
-    FastAPI would parse the JSON body straight into the model, and building a
-    model from a dict does **not** check a signature — a client could `POST
-    {"sub": "admin"}`. Tokens must arrive through the dependency above, or as a
-    `str` field you pass to `from_token()` yourself. See
+    FastAPI parses the JSON body straight into the model. On a model *without*
+    `verified_only`, that is a hole: no signature is involved, so a client could
+    simply `POST {"sub": "admin"}`. With `verified_only=True` — as in
+    [step 1](#1-the-token-models) — the same request fails with
+    `jwt_unverified_payload` instead, which is why these models set it.
+
+    Do not rely on the flag alone, though. Tokens belong in the `Authorization`
+    header, through the dependency above; when one genuinely arrives in a body
+    (a refresh token, say), type the field as `str` and call `from_token()`
+    yourself, as [step 4](#4-endpoints) does. See
     [Security notes](../guide/security.md#a-model-built-from-a-dict-is-not-authenticated).
 
 ## 4. Endpoints
@@ -145,11 +160,15 @@ def login(credentials: LoginRequest) -> TokenPair:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Bad credentials")
 
     return TokenPair(
-        access_token=str(AccessToken(sub=user_id, scopes=scopes_for(user_id))),
-        refresh_token=str(RefreshToken(sub=user_id)),
+        access_token=AccessToken.from_claims(sub=user_id, scopes=scopes_for(user_id)).generate(),
+        refresh_token=RefreshToken.from_claims(sub=user_id).generate(),
         expires_in=ACCESS_TTL,
     )
 ```
+
+`from_claims()` is the deliberate-construction call these `verified_only` models
+require; `generate()` signs. On a model without the flag, `AccessToken(sub=...)`
+would do just as well.
 
 Consuming one — the endpoint body works with a typed object, so `token.sub` and
 `token.scopes` are autocompleted and type-checked:
@@ -180,8 +199,8 @@ def refresh(body: RefreshRequest) -> TokenPair:
     revoke(old.jti)  # rotate: a refresh token is single-use
 
     return TokenPair(
-        access_token=str(AccessToken(sub=old.sub, scopes=scopes_for(old.sub))),
-        refresh_token=str(RefreshToken(sub=old.sub)),
+        access_token=AccessToken.from_claims(sub=old.sub, scopes=scopes_for(old.sub)).generate(),
+        refresh_token=RefreshToken.from_claims(sub=old.sub).generate(),
         expires_in=ACCESS_TTL,
     )
 ```
@@ -299,53 +318,70 @@ DebugResponse.model_json_schema()
 ```
 
 Note that this only affects the *schema*. A response model that must actually
-emit the compact token still needs a `str` field assigned `str(token)`, as in
-[step 2](#2-response-models).
+emit the compact token still needs a `str` field assigned `token.generate()`, as
+in [step 2](#2-response-models).
 
 ## Testing
 
 `TestClient` plus the models themselves — no fixtures for signing needed, since
-the model is the signer:
+the model is the signer. `from_claims()` builds the tokens, `generate()` signs
+them:
 
 ```python
+import time
+
 from fastapi.testclient import TestClient
 
 client = TestClient(app)
 
 
-def auth(token: AccessToken) -> dict[str, str]:
-    return {"Authorization": f"Bearer {token}"}
+def auth(token: AccessToken | RefreshToken) -> dict[str, str]:
+    return {"Authorization": f"Bearer {token.generate()}"}
 
 
 def test_me_returns_the_subject() -> None:
-    response = client.get("/me", headers=auth(AccessToken(sub="user-42", scopes=["read"])))
+    token = AccessToken.from_claims(sub="user-42", scopes=["read"])
+
+    response = client.get("/me", headers=auth(token))
 
     assert response.status_code == 200
     assert response.json()["user"] == "user-42"
 
 
 def test_expired_token_is_rejected() -> None:
-    expired = AccessToken.model_validate(
-        {"sub": "user-42", "exp": int(time.time()) - 1},
-        context={"validate_claims": False},
+    expired = AccessToken.from_claims(
+        {"validate_claims": False}, sub="user-42", exp=int(time.time()) - 1
     )
 
     assert client.get("/me", headers=auth(expired)).status_code == 401
 
 
 def test_refresh_token_is_not_an_access_token() -> None:
-    forged = RefreshToken(sub="user-42")
+    forged = RefreshToken.from_claims(sub="user-42")
 
     assert client.get("/me", headers=auth(forged)).status_code == 401
+
+
+def test_a_forged_payload_never_becomes_a_token() -> None:
+    with pytest.raises(ValidationError) as exc_info:
+        AccessToken(sub="admin", scopes=["users:write"])
+
+    assert "jwt_unverified_payload" in {e["type"] for e in exc_info.value.errors()}
 ```
 
-Claim markers run on construction too, so `AccessToken(sub="user-42", exp=<past>)`
-raises rather than producing an expired token. `model_validate()` with
-`context={"validate_claims": False}` is how you build one deliberately — see
-[Skipping claim checks](../guide/claims.md#skipping-claim-checks).
+Three things worth copying:
 
-The last test relies on the two models using different keys: a `RefreshToken` is
-a perfectly well-formed JWT that simply does not verify as an `AccessToken`.
+- `f"Bearer {token}"` would send the *claims*, not a token — `str()` does not
+  sign. Always `token.generate()`.
+- Claim markers run on construction, so building an expired token needs
+  `from_claims({"validate_claims": False}, ...)`; see
+  [Skipping claim checks](../guide/claims.md#skipping-claim-checks).
+- The last test is the one that keeps `verified_only` honest: it asserts that the
+  dangerous shape stays impossible, so nobody quietly drops the flag later.
+
+The refresh-token test relies on the two models using different keys: a
+`RefreshToken` is a perfectly well-formed JWT that simply does not verify as an
+`AccessToken`.
 
 ## The complete application
 
@@ -370,7 +406,10 @@ ACCESS_TTL = 15 * 60
 
 class AccessToken(JWTModel):
     model_config = ConfigDict(
-        algorithm="HS256", encoding_key=ACCESS_SECRET, decoding_key=ACCESS_SECRET
+        algorithm="HS256",
+        encoding_key=ACCESS_SECRET,
+        decoding_key=ACCESS_SECRET,
+        verified_only=True,
     )
 
     sub: str
@@ -382,7 +421,10 @@ class AccessToken(JWTModel):
 
 class RefreshToken(JWTModel):
     model_config = ConfigDict(
-        algorithm="HS256", encoding_key=REFRESH_SECRET, decoding_key=REFRESH_SECRET
+        algorithm="HS256",
+        encoding_key=REFRESH_SECRET,
+        decoding_key=REFRESH_SECRET,
+        verified_only=True,
     )
 
     sub: str
@@ -444,8 +486,8 @@ def requires(*scopes: str) -> Callable[[AccessToken], AccessToken]:
 
 def issue(sub: str, scopes: list[str]) -> TokenPair:
     return TokenPair(
-        access_token=str(AccessToken(sub=sub, scopes=scopes)),
-        refresh_token=str(RefreshToken(sub=sub)),
+        access_token=AccessToken.from_claims(sub=sub, scopes=scopes).generate(),
+        refresh_token=RefreshToken.from_claims(sub=sub).generate(),
         expires_in=ACCESS_TTL,
     )
 

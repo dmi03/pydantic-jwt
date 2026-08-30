@@ -12,6 +12,7 @@ Everything this library rejects is reported as a Pydantic error with a stable
 | `jwt_claim_invalid` | A [claim marker](claims.md) rejected the value — expired, not yet valid, issued in the future, wrong issuer or audience. | `{"claim": ..., "value": ...}` |
 | `jwt_invalid_signature` | The signature does not verify with the configured key and algorithm. | `{"algorithm": ...}` |
 | `jwt_missing_key` | No key/algorithm is available for the operation and `require_keys` is on. | `{"model": ..., "keys": ...}` |
+| `jwt_unverified_payload` | A [`verified_only`](models.md#refusing-unverified-payloads) model was handed a payload instead of a verified token. | `{"model": ...}` |
 | `extra_forbidden` | The token carries a claim the model does not declare (Pydantic's own error). | — |
 
 Reading them off a `ValidationError`:
@@ -99,22 +100,39 @@ the token passed every check.
 ## Union errors from `model_validate()`
 
 `JWTModel`'s core schema is a left-to-right union — the token-string branch,
-then the ordinary model branch. When the input is a string and the string branch
-fails, Pydantic reports both branches:
+then the payload branch. Whichever branch the input was meant for, Pydantic
+reports both:
 
 ```text
 2 validation errors for AccessToken
 function-plain[_validate_from_str()]
   Invalid token signature for algorithm HS256 [type=jwt_invalid_signature, ...]
-AccessToken
+function-before[_reject_unverified_payload(), AccessToken]
   Input should be a valid dictionary or instance of AccessToken [type=model_type, ...]
 ```
 
-The second entry is noise from the branch that was never going to match. Filter
-on the prefix:
+A payload rejected by [`verified_only`](models.md#refusing-unverified-payloads)
+looks the same the other way round — a `jwt_type` from the string branch that
+never applied, then the real `jwt_unverified_payload`:
+
+```text
+2 validation errors for SessionToken
+function-plain[_validate_from_str()]
+  Value must be a string [type=jwt_type, input_value={'sub': 'x', ...}, input_type=dict]
+function-before[_reject_unverified_payload(), SessionToken]
+  SessionToken only accepts a verified token string [type=jwt_unverified_payload, ...]
+```
+
+One entry is always noise from the branch that was never going to match, so read
+the *set* of types rather than the first error:
 
 ```python
-jwt_errors = [e for e in exc.errors() if e["type"].startswith("jwt_")]
+types = {error["type"] for error in exc.errors()}
+
+if "jwt_invalid_signature" in types:
+    ...  # forged
+elif "jwt_unverified_payload" in types:
+    ...  # a payload where a token was required — a bug in your code, not theirs
 ```
 
 ## Reacting to a specific error
@@ -158,7 +176,7 @@ except ValidationError as exc:
 ## Validation context
 
 The context dict passed to `model_validate()` — or to `from_token(context=...)`
-— carries four keys this library reads:
+— carries five keys this library reads:
 
 | Key | Type | Effect |
 | --- | --- | --- |
@@ -166,6 +184,15 @@ The context dict passed to `model_validate()` — or to `from_token(context=...)
 | `decoding_key` | `str` | Key to verify with, overriding `model_config`. |
 | `algorithm` | `str` | Algorithm to verify with, overriding `model_config`. |
 | `require_keys` | `bool` | Overrides `model_config` for this call. |
+| `allow_unverified_payload` | `bool` | `True` stands the [`verified_only`](models.md#refusing-unverified-payloads) guard down. Set for you by `from_token()` and `from_claims()`. |
+
+!!! warning "Do not set `allow_unverified_payload` yourself"
+
+    It is how `from_token()` and `from_claims()` tell the guard that the payload
+    is accounted for. Passing it by hand re-opens exactly the hole
+    `verified_only` was turned on to close; call
+    [`from_claims()`][pydantic_jwt.JWTModel.from_claims] instead, which says the
+    same thing at the call site where a reader will see it.
 
 ```python
 AccessToken.model_validate(
@@ -190,14 +217,16 @@ Session.model_validate({"access_token": raw}, context={"decoding_key": tenant_ke
 
 ## Testing tokens
 
-Two things make tests straightforward:
+Three things make tests straightforward:
 
 - `require_keys=False` lets a fixture model read any token without a key.
-- `context={"validate_claims": False}` freezes time out of the picture for a
-  fixed payload.
+- `from_claims()` builds a token from claims regardless of `verified_only`.
+- `from_claims({"validate_claims": False}, ...)` freezes time out of the picture,
+  which is how you build a deliberately expired token.
 
 ```python
 import secrets
+import time
 
 import pytest
 
@@ -206,15 +235,24 @@ KEY = secrets.token_hex(32)
 
 @pytest.fixture
 def token() -> str:
-    return AccessToken(sub="user-42").generate(encoding_key=KEY, algorithm="HS256")
+    return AccessToken.from_claims(sub="user-42").generate(encoding_key=KEY, algorithm="HS256")
 
 
-def test_rejects_a_forged_token(token: str) -> None:
-    forged = AccessToken(sub="attacker").generate(
+def test_rejects_a_forged_token() -> None:
+    forged = AccessToken.from_claims(sub="attacker").generate(
         encoding_key=secrets.token_hex(32), algorithm="HS256"
     )
     with pytest.raises(ValueError):
         AccessToken.from_token(forged, decoding_key=KEY, algorithm="HS256")
+
+
+def test_rejects_an_expired_token() -> None:
+    expired = AccessToken.from_claims(
+        {"validate_claims": False}, sub="user-42", exp=int(time.time()) - 1
+    ).generate(encoding_key=KEY, algorithm="HS256")
+
+    with pytest.raises(ValueError):
+        AccessToken.from_token(expired, decoding_key=KEY, algorithm="HS256")
 ```
 
 Use a 32-byte key even in tests, or PyJWT will warn on every call.
