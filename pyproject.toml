@@ -38,6 +38,7 @@ Issues = "https://github.com/dmi03/pydantic-jwt/issues"
 dev = [
     {include-group = "lint"},
     {include-group = "tests"},
+    {include-group = "docs"},
 ]
 lint = [
     "ruff>=0.16.3",
