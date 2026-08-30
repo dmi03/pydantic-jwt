@@ -8,7 +8,7 @@ from typing import Any
 
 import jwt
 import pytest
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 from pydantic_core import PydanticCustomError
 
 from pydantic_jwt import ConfigDict, Exp, JWTModel, JWTStr
@@ -45,6 +45,17 @@ class ExpiringToken(Token):
 
 class KeylessToken(JWTModel):
     sub: str
+
+
+class IncomingToken(JWTModel):
+    model_config = ConfigDict(algorithm=ALGORITHM, decoding_key=KEY, verified_only=True)
+
+    sub: str
+    exp: Exp
+
+
+class Envelope(BaseModel):
+    token: IncomingToken
 
 
 def encode(key: str = KEY, **kwargs) -> str:
@@ -132,6 +143,50 @@ def test_keys_can_be_supplied_per_call(decode: Callable[[str], Any]) -> None:
         decode(forged)
 
     assert "jwt_invalid_signature" in repr(exc_info.value)
+
+
+@pytest.mark.parametrize(
+    "build",
+    [
+        pytest.param(
+            lambda: Envelope.model_validate({"token": {"sub": "admin", "exp": int(time.time() + 999)}}),
+            id="nested-dict",
+        ),
+        pytest.param(lambda: IncomingToken.model_validate({"sub": "admin", "exp": int(time.time() + 999)}), id="dict"),
+        pytest.param(lambda: IncomingToken(sub="admin", exp=int(time.time() + 999)), id="constructor"),
+    ],
+)
+def test_verified_only_rejects_payloads_without_a_token(build: Callable[[], Any]) -> None:
+    with pytest.raises(ValidationError) as exc_info:
+        build()
+
+    assert "jwt_unverified_payload" in {error["type"] for error in exc_info.value.errors()}
+
+
+def test_verified_only_accepts_token_strings() -> None:
+    raw = encode(sub="user", exp=int(time.time() + 999))
+
+    assert IncomingToken.from_token(raw).sub == "user"
+    assert Envelope.model_validate({"token": raw}).token.sub == "user"
+
+
+def test_from_claims_builds_a_model_and_still_checks_claims() -> None:
+    assert IncomingToken.from_claims(sub="user", exp=int(time.time() + 999)).sub == "user"
+
+    expired = int(time.time() - 999)
+
+    with pytest.raises(ValidationError):
+        IncomingToken.from_claims(sub="user", exp=expired)
+
+    skipped = IncomingToken.from_claims({"validate_claims": False}, sub="user", exp=expired)
+    assert skipped.exp == expired
+
+
+def test_an_existing_instance_passes_through() -> None:
+    token = IncomingToken.from_token(encode(sub="user", exp=int(time.time() + 999)))
+
+    assert Envelope(token=token).token is token
+    assert Envelope.model_validate({"token": token}).token is token
 
 
 @pytest.mark.parametrize(
