@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pydantic-jwt"
-version = "0.2.0"
+version = "1.0.0"
 description = "JWT tokens as Pydantic models"
 readme = "README.md"
 license = "MIT"
