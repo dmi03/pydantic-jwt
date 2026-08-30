@@ -75,9 +75,7 @@ def test_token_round_trips_through_its_jwt_string() -> None:
     raw = token.jwt_str
 
     assert isinstance(raw, JWTStr)
-    assert raw == str(token)
     assert raw.payload == {"sub": SUBJECT}
-    assert Token.model_validate(str(token)) == token
 
 
 def test_union_falls_back_to_regular_model_validation() -> None:

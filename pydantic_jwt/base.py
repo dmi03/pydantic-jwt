@@ -191,9 +191,6 @@ class JWTModel(BaseModel):
         """
         return JWTStr(self.generate())
 
-    def __str__(self) -> str:
-        return self.generate()
-
     def generate(self, *, encoding_key: str | None = None, algorithm: str | None = None) -> str:
         """Encode the model as a signed token.
 
